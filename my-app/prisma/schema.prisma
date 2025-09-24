@@ -1,0 +1,97 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACTOR
+}
+
+enum PayGroup {
+  BI_WEEKLY
+  MONTHLY
+}
+
+enum PayType {
+  HOURLY
+  SALARY
+}
+
+enum PaymentMethod {
+  CHEQUE
+  DIRECT_DEPOSIT
+}
+
+enum PayStatus {
+  PENDING
+  PROCESSED
+  PAID
+}
+
+model Employee {
+  id                BigInt        @id @default(autoincrement())
+  firstName         String
+  lastName          String
+  email             String
+  sin               String
+  paymentMethod     PaymentMethod @default(CHEQUE)
+
+  addrLine1         String
+  addrLine2         String?
+  addrCity          String
+  addrProvince      String        @default("ON")
+  addrPostal        String
+  addrCountry       String        @default("CA")
+
+  birthDate         DateTime
+  employmentType    EmploymentType
+  hireDate          DateTime
+  payGroup          PayGroup      @default(BI_WEEKLY)
+  payType           PayType
+  hourlyRate        Decimal?
+  salary            Decimal?
+  vacationPay       Decimal       @default(4)
+  bonus             Decimal       @default(0)
+  federalTD1        Decimal       @default(15492)
+  provincialTD1     Decimal       @default(12298)
+
+  bankName          String?
+  bankAccount       String?
+  transitNumber     String?
+  institutionNumber String?
+
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  payHistory        PayHistory[]
+
+  @@index([email, hireDate])
+}
+
+model PayHistory {
+  id              BigInt       @id @default(autoincrement())
+  employee        Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId      BigInt
+  payDate         DateTime
+  hoursWorked     Decimal?
+  grossPay        Decimal
+  ded_cpp         Decimal       @default(0)
+  ded_ei          Decimal       @default(0)
+  ded_income_tax  Decimal       @default(0)
+  ded_eht         Decimal       @default(0)
+  ded_wsib        Decimal       @default(0)
+  netPay          Decimal
+  status          PayStatus     @default(PENDING)
+  review_valid    Boolean       @default(true)
+  review_errors   String[]      @default([])
+  review_warnings String[]      @default([])
+  createdAt       DateTime      @default(now())
+
+  @@index([employeeId, payDate])
+}
