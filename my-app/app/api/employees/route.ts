@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { employeeInputSchema } from "@/app/(dashboard)/employees/validators";
+import { employeeInputSchema } from "@/app/employees/validators";
 
 // GET: 목록 (민감정보 제외)
 export async function GET() {
