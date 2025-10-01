@@ -46,7 +46,7 @@ export default async function HomePage() {
           <div className="text-sm text-gray-500">Quick actions</div>
           <div className="mt-3 flex flex-wrap gap-2">
             <Link href="/employees" className="border rounded px-3 py-1 hover:bg-gray-50">New Employee</Link>
-            <Link href="/employees" className="border rounded px-3 py-1 hover:bg-gray-50">Manage</Link>
+            <Link href="/payroll" className="border rounded px-3 py-1 hover:bg-gray-50">Time calculate</Link>
           </div>
         </div>
 
