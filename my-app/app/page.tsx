@@ -26,7 +26,7 @@ export default async function HomePage() {
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Waggio Payroll</h1>
         <nav className="flex gap-3">
-          <Link href="/yees" className="underline">Employees</Link>
+          <Link href="/employees" className="underline">Employees</Link>
           <Link href="/employees" className="underline">Quick Add</Link>
         </nav>
       </header>
