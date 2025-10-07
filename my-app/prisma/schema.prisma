@@ -31,7 +31,7 @@ enum PaymentMethod {
 enum PayStatus {
   PENDING
   PROCESSED
-  PAID
+  SENT
 }
 
 model Employee {
