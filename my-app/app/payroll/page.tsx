@@ -1,3 +1,4 @@
+// app/(...)/payroll/page.tsx
 import { prisma } from "@/lib/prisma";
 import HoursTable from "./hours-table";
 
