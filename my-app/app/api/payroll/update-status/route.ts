@@ -7,13 +7,39 @@ type ScheduleBody = {
   payDate: string;               // YYYY-MM-DD
   periodStart?: string | null;   // YYYY-MM-DD
   periodEnd?: string | null;     // YYYY-MM-DD
-  sendAt?: string | null;        // 'YYYY-MM-DDTHH:mm' or ISO
+  sendAt?: string | null;        // 'YYYY-MM-DD' | 'YYYY-MM-DDTHH:mm' | ISO
   timezone?: string | null;      // e.g., 'America/Toronto'
   meta?: Record<string, unknown>;
 };
 
 async function safeJson<T = any>(req: Request): Promise<T> {
   try { return await req.json(); } catch { throw new Error('Invalid JSON body'); }
+}
+
+/**
+ * 주어진 'YYYY-MM-DD'와 'HH:mm'을 tz(예: America/Toronto) 로컬 시각으로 가정해
+ * 정확한 UTC ISO(YYYY-MM-DDTHH:mm:ss.sssZ) 문자열을 만들어준다.
+ */
+function toIsoAtLocalTime(date: string, time: string, tz: string) {
+  const [Y, M, D] = date.split('-').map(Number);
+  const [h, m] = time.split(':').map(Number);
+
+  // tz 기준으로 해당 시각을 포맷 → 실제 UTC 시각을 역으로 복원
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(new Date(Date.UTC(Y, M - 1, D, h, m)));
+
+  const get = (type: string) => Number(parts.find(p => p.type === type)?.value);
+  const assumedUtc = new Date(Date.UTC(
+    get('year'),
+    get('month') - 1,
+    get('day'),
+    get('hour'),
+    get('minute'),
+  ));
+  return assumedUtc.toISOString();
 }
 
 export async function POST(req: Request) {
@@ -36,8 +62,8 @@ export async function POST(req: Request) {
             payDate: body.payDate,
             periodStart: body.periodStart ?? null,
             periodEnd: body.periodEnd ?? null,
-            sendAt: body.sendAt ?? null,
-            timezone: body.timezone ?? 'America/Toronto',
+            sendAt: body.sendAt ?? null,                 // 날짜 or 날짜+시간 or ISO
+            timezone: body.timezone ?? 'America/Toronto', // 기본 타임존
             meta: body.meta ?? {},
           }
         : undefined);
@@ -56,12 +82,32 @@ export async function POST(req: Request) {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (process.env.N8N_API_KEY) headers['X-API-Key'] = process.env.N8N_API_KEY;
 
-      const sendAtIso = schedule.sendAt ? new Date(schedule.sendAt).toISOString() : null;
+      const tz = schedule.timezone ?? 'America/Toronto';
+
+      // ✅ 오전 9시 강제 규칙:
+      // - sendAt이 비어있으면: payDate의 "09:00" (tz 기준)
+      // - sendAt이 'YYYY-MM-DD'만 오면: 그 날짜 "09:00" (tz 기준)
+      // - sendAt이 'YYYY-MM-DDTHH:mm' 또는 ISO면: 그대로 사용(서버 해석 ISO)
+      let sendAtIso: string | null = null;
+      if (!schedule.sendAt) {
+        // 시간 안 들어오면 기본 09:00
+        sendAtIso = toIsoAtLocalTime(schedule.payDate, '09:00', tz);
+      } else {
+        const s = String(schedule.sendAt);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+          // 날짜만 들어온 경우 → 09:00 강제
+          sendAtIso = toIsoAtLocalTime(s, '09:00', tz);
+        } else {
+          // 시간 포함(또는 완전한 ISO) → Date 파싱
+          // 프론트에서 tz 포함 ISO(예: 2025-10-31T09:00:00-04:00)를 주면 가장 정확함
+          sendAtIso = new Date(s).toISOString();
+        }
+      }
 
       const n8nPayload = {
         ...schedule,
         employeeIds: schedule.employeeIds.map((x) => String(x)),
-        sendAtIso,
+        sendAtIso, // n8n Wait Until 노드가 이 값을 그대로 사용
         receivedAt: new Date().toISOString(),
         source: 'waggio-next/payroll',
       };
@@ -96,7 +142,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'No status provided' }, { status: 400 });
     }
 
-    // 스키마에 맞춘 허용 상태값
     const ALLOWED = new Set(['PENDING', 'PROCESSED', 'SENT']);
     if (!ALLOWED.has(status)) {
       return NextResponse.json({ error: `Invalid status: ${status}. Allowed: PENDING | PROCESSED | SENT` }, { status: 400 });
