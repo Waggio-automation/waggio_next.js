@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useRef, useEffect } from "react";
 import PeriodRangePicker from "./components/PeriodRangePicker";
+import { getOntarioHolidaysInRange } from "@/lib/ontarioHolidays";
 
 type EmployeeRow = {
   id: string;
@@ -17,7 +18,15 @@ type EmployeeRow = {
   createdAt: string;
 };
 
-type RowState = { include: boolean; hours: number; overtime: number; includeVacation: boolean };
+type RowState = {
+  include: boolean;
+  hours: number;
+  overtime: number;
+  includeVacation: boolean;
+  holidayHours: number; // 공휴일 근무 시간
+};
+
+const HOLIDAY_MULTIPLIER = 1.5; // 공휴일 시급 배수
 
 function fmtDate(d: Date) {
   const y = d.getFullYear();
@@ -61,7 +70,16 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
   const [rowsState, setRowsState] = useState<Record<string, RowState>>(
     () =>
       Object.fromEntries(
-        employees.map((e) => [e.id, { include: true, hours: 0, overtime: 0, includeVacation: true }])
+        employees.map((e) => [
+          e.id,
+          {
+            include: true,
+            hours: 0,
+            overtime: 0,
+            includeVacation: true,
+            holidayHours: 0,
+          },
+        ])
       )
   );
 
@@ -71,6 +89,16 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<{ ok?: string; err?: string }>({});
 
+  // ✅ 선택된 기간 안의 온타리오 공휴일 계산 (컴포넌트 안!)
+  const periodHolidays = useMemo(() => {
+    if (!period.start || !period.end) return [];
+    const start = parseYmd(period.start);
+    const end = parseYmd(period.end);
+    if (!start || !end) return [];
+    return getOntarioHolidaysInRange(start, end);
+  }, [period.start, period.end]);
+
+  // payDate 고르면 sendOn 자동 설정
   useEffect(() => {
     if (payDate && !sendOn) {
       const d = new Date(payDate);
@@ -82,12 +110,16 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
   const allSelected = employees.every((e) => rowsState[e.id]?.include);
   const anySelected = employees.some((e) => rowsState[e.id]?.include);
   const allRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (!allRef.current) return;
     allRef.current.indeterminate = !allSelected && anySelected;
   }, [allSelected, anySelected]);
 
-  const cad = useMemo(() => new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }), []);
+  const cad = useMemo(
+    () => new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }),
+    []
+  );
 
   const rows = employees.map((e) => {
     const st = rowsState[e.id];
@@ -95,7 +127,15 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
     let base = 0;
 
     if (e.payType === "HOURLY") {
-      base = rate * (st.hours || 0) + rate * 1.5 * (st.overtime || 0);
+      const totalHours = st.hours || 0;                  // 사용자가 보는 "총 Hours"
+    const holidayHours = st.holidayHours || 0;         // 그 중 공휴일
+    const normalHours = Math.max(totalHours - holidayHours, 0);
+
+    const regularPay = rate * normalHours;             // 공휴일이 아닌 시간
+    const holidayPay = rate * HOLIDAY_MULTIPLIER * holidayHours; // 공휴일 시간
+    const overtimePay = rate * 1.5 * (st.overtime || 0);
+
+    base = regularPay + holidayPay + overtimePay;
     } else {
       const sal = e.salary ?? 0;
       base = e.payGroup === "BI_WEEKLY" ? sal / 26 : sal / 12;
@@ -118,19 +158,25 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
 
   async function saveSelectedToPayHistory() {
     setMsg({});
-    const idemKey = typeof window !== "undefined" && crypto?.randomUUID ? crypto.randomUUID() : "";
+    const idemKey =
+      typeof window !== "undefined" && crypto?.randomUUID
+        ? crypto.randomUUID()
+        : "";
 
     try {
       setSubmitting(true);
 
-      if (!period.start || !period.end) throw new Error("Select period start/end.");
+      if (!period.start || !period.end)
+        throw new Error("Select period start/end.");
       if (!payDate) throw new Error("Select pay date.");
       if (!sendOn) throw new Error("Select 'Send paystub on' date.");
 
       const payDateObj = parseYmd(payDate);
       const endObj = parseYmd(period.end);
       if (payDateObj && endObj && payDateObj < endObj) {
-        setMsg({ err: "Pay date cannot be before the end of the pay period." });
+        setMsg({
+          err: "Pay date cannot be before the end of the pay period.",
+        });
         setSubmitting(false);
         return;
       }
@@ -142,6 +188,7 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
           hoursWorked: r.payType === "HOURLY" ? r.state.hours : null,
           overtime: r.payType === "HOURLY" ? r.state.overtime : 0,
           includeVacation: r.state.includeVacation,
+          holidayHours: r.payType === "HOURLY" ? r.state.holidayHours : 0,
         }));
 
       if (!items.length) throw new Error("No rows selected.");
@@ -151,7 +198,10 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
       // 변경: /api/payroll/update-status (n8n 연동 API)
       const res = await fetch("/api/payroll/update-status", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": idemKey },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idemKey,
+        },
         body: JSON.stringify({
           // n8n 호출을 위한 스케줄 데이터 구조
           schedule: {
@@ -186,6 +236,7 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
         <h2 className="text-lg font-semibold">Payroll Run</h2>
       </div>
 
+      {/* Employee 테이블 */}
       <div className="bg-white">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50">
@@ -211,8 +262,9 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
               <th className="p-3 text-left">Employee</th>
               <th className="p-3 text-left">Type</th>
               <th className="p-3 text-right">Rate/Period</th>
-              <th className="p-3 text-right">Hours</th>
-              <th className="p-3 text-right">OT</th>
+              <th className="p-3 text-right">Hours (total, excl. OT)</th>
+              <th className="p-3 text-right">OT Hours</th>
+              <th className="p-3 text-right">Holiday hrs (inside hours)</th>
               <th className="p-3 text-right">Base</th>
               <th className="p-3 text-right">Vacation</th>
               <th className="p-3 text-center">Incl. Vac</th>
@@ -221,7 +273,10 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id} className={`border-t ${!r.state.include ? "opacity-50" : ""}`}>
+              <tr
+                key={r.id}
+                className={`border-t ${!r.state.include ? "opacity-50" : ""}`}
+              >
                 <td className="p-3 text-center">
                   <input
                     type="checkbox"
@@ -234,11 +289,15 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
                     }
                   />
                 </td>
-                <td className="p-3">{r.firstName} {r.lastName}</td>
+                <td className="p-3">
+                  {r.firstName} {r.lastName}
+                </td>
                 <td className="p-3">{r.payType}</td>
                 <td className="p-3 text-right">
                   {r.payType === "HOURLY"
-                    ? (r.hourlyRate != null ? cad.format(r.hourlyRate) + "/hr" : "-")
+                    ? r.hourlyRate != null
+                      ? cad.format(r.hourlyRate) + "/hr"
+                      : "-"
                     : r.payGroup === "BI_WEEKLY"
                     ? cad.format((r.salary ?? 0) / 26) + " / biweekly"
                     : cad.format((r.salary ?? 0) / 12) + " / monthly"}
@@ -253,7 +312,10 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
                       onChange={(e) =>
                         setRowsState((prev) => ({
                           ...prev,
-                          [r.id]: { ...prev[r.id], hours: Number(e.target.value) || 0 },
+                          [r.id]: {
+                            ...prev[r.id],
+                            hours: Number(e.target.value) || 0,
+                          },
                         }))
                       }
                       className="w-20 rounded border p-1 text-right"
@@ -273,7 +335,33 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
                       onChange={(e) =>
                         setRowsState((prev) => ({
                           ...prev,
-                          [r.id]: { ...prev[r.id], overtime: Number(e.target.value) || 0 },
+                          [r.id]: {
+                            ...prev[r.id],
+                            overtime: Number(e.target.value) || 0,
+                          },
+                        }))
+                      }
+                      className="w-20 rounded border p-1 text-right"
+                      disabled={!r.state.include}
+                    />
+                  ) : (
+                    <span className="text-gray-400">n/a</span>
+                  )}
+                </td>
+                <td className="p-3 text-right">
+                  {r.payType === "HOURLY" ? (
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.25"
+                      value={r.state.holidayHours}
+                      onChange={(e) =>
+                        setRowsState((prev) => ({
+                          ...prev,
+                          [r.id]: {
+                            ...prev[r.id],
+                            holidayHours: Number(e.target.value) || 0,
+                          },
                         }))
                       }
                       className="w-20 rounded border p-1 text-right"
@@ -284,7 +372,9 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
                   )}
                 </td>
                 <td className="p-3 text-right">{cad.format(r.base)}</td>
-                <td className="p-3 text-right">{r.vacation ? cad.format(r.vacation) : "-"}</td>
+                <td className="p-3 text-right">
+                  {r.vacation ? cad.format(r.vacation) : "-"}
+                </td>
                 <td className="p-3 text-center">
                   <input
                     type="checkbox"
@@ -292,19 +382,26 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
                     onChange={(e) =>
                       setRowsState((prev) => ({
                         ...prev,
-                        [r.id]: { ...prev[r.id], includeVacation: e.target.checked },
+                        [r.id]: {
+                          ...prev[r.id],
+                          includeVacation: e.target.checked,
+                        },
                       }))
                     }
                     disabled={!r.state.include}
                   />
                 </td>
-                <td className="p-3 text-right font-medium">{cad.format(r.gross)}</td>
+                <td className="p-3 text-right font-medium">
+                  {cad.format(r.gross)}
+                </td>
               </tr>
             ))}
           </tbody>
           <tfoot className="bg-gray-50">
             <tr className="font-semibold border-t">
-              <td className="p-3" colSpan={6}>Totals (selected)</td>
+              <td className="p-3" colSpan={7}>
+                Totals (selected)
+              </td>
               <td className="p-3 text-right">{cad.format(totals.base)}</td>
               <td className="p-3 text-right">{cad.format(totals.vacation)}</td>
               <td />
@@ -314,6 +411,7 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
         </table>
       </div>
 
+      {/* Schedule */}
       <div className="border-t bg-gray-50/60">
         <div className="flex flex-col gap-4 p-5">
           <div>
@@ -323,6 +421,28 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
             </p>
           </div>
 
+          {/* ✅ 이 기간에 포함된 공휴일 안내 */}
+          {periodHolidays.length > 0 && (
+            <div className="rounded-md border border-amber-100 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+              <p className="font-medium">
+                This period includes Ontario public holidays:
+              </p>
+              <ul className="mt-1 list-disc pl-4">
+                {periodHolidays.map((h) => (
+                  <li key={`${h.id}-${h.date.toISOString()}`}>
+                    {h.name} (
+                    {h.date.toLocaleDateString("en-CA", {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                    })}
+                    )
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="sm:col-span-2 lg:col-span-2">
               <PeriodRangePicker
@@ -331,8 +451,18 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
                 hint="한 번에 시작/종료 범위를 선택하세요"
               />
             </div>
-            <DateField label="Pay date" value={payDate} onChange={setPayDate} hint="실제 지급일" />
-            <DateField label="Send paystub on" value={sendOn} onChange={setSendOn} hint="직원에게 paystub을 보낼 날짜" />
+            <DateField
+              label="Pay date"
+              value={payDate}
+              onChange={setPayDate}
+              hint="실제 지급일"
+            />
+            <DateField
+              label="Send paystub on"
+              value={sendOn}
+              onChange={setSendOn}
+              hint="직원에게 paystub을 보낼 날짜"
+            />
           </div>
 
           <div className="mt-1 flex items-center justify-between gap-3">
@@ -344,7 +474,7 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
               disabled={submitting}
               className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {submitting ? "Saving..." : "Save to Pay History (PENDING)"}
+              {submitting ? "Saving..." : "Create Paystub & Save"} {/*Save to Pay History (PENDING)*/}
             </button>
           </div>
 
