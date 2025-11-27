@@ -58,7 +58,6 @@ function DateField({
 }
 
 export default function HoursTable({ employees }: { employees: EmployeeRow[] }) {
-  // ✅ employees 그대로 유지
   const [rowsState, setRowsState] = useState<Record<string, RowState>>(
     () =>
       Object.fromEntries(
@@ -72,7 +71,6 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<{ ok?: string; err?: string }>({});
 
-  // ✅ payDate 고르면 자동 전송일 설정
   useEffect(() => {
     if (payDate && !sendOn) {
       const d = new Date(payDate);
@@ -120,7 +118,6 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
 
   async function saveSelectedToPayHistory() {
     setMsg({});
-    // ❗ try 바깥에서 crypto/randomUUID 호출로 인한 렌더깨짐 방지
     const idemKey = typeof window !== "undefined" && crypto?.randomUUID ? crypto.randomUUID() : "";
 
     try {
@@ -130,7 +127,6 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
       if (!payDate) throw new Error("Select pay date.");
       if (!sendOn) throw new Error("Select 'Send paystub on' date.");
 
-      // ✅ payDate가 period.end보다 빠르면 에러
       const payDateObj = parseYmd(payDate);
       const endObj = parseYmd(period.end);
       if (payDateObj && endObj && payDateObj < endObj) {
@@ -150,23 +146,34 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
 
       if (!items.length) throw new Error("No rows selected.");
 
-      const res = await fetch("/api/payhistory", {
+      // 🔥 여기가 핵심 변경 사항입니다! 🔥
+      // 기존: /api/payhistory (단순 저장)
+      // 변경: /api/payroll/update-status (n8n 연동 API)
+      const res = await fetch("/api/payroll/update-status", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Idempotency-Key": idemKey },
         body: JSON.stringify({
-          periodStart: period.start,
-          periodEnd: period.end,
-          payDate,
-          sendOn,
-          items,
+          // n8n 호출을 위한 스케줄 데이터 구조
+          schedule: {
+            employeeIds: items.map((i) => i.employeeId),
+            payDate,
+            periodStart: period.start,
+            periodEnd: period.end,
+            sendAt: sendOn, // 여기를 sendAt으로 맞춰줍니다
+            timezone: "America/Toronto" 
+          },
+          // 백엔드에서 필요할 수 있으니 추가 정보도 같이 전송
+          status: "PENDING"
         }),
       });
+
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed");
 
-      setMsg({ ok: `Saved ${data.count} pay history rows (status: PENDING)` });
+      // 메시지 부분은 n8n 응답 구조에 따라 조금 다를 수 있지만, 일단 성공으로 처리
+      setMsg({ ok: `Successfully triggered Payroll Workflow! (n8n)` });
+
     } catch (e: any) {
-      // ✅ 에러 메시지만 갱신, 나머지 state 유지
       setMsg({ err: e.message });
     } finally {
       setSubmitting(false);
@@ -179,7 +186,6 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
         <h2 className="text-lg font-semibold">Payroll Run</h2>
       </div>
 
-      {/* ✅ Employee 테이블은 항상 렌더됨 */}
       <div className="bg-white">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50">
@@ -308,7 +314,6 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
         </table>
       </div>
 
-      {/* ✅ Schedule */}
       <div className="border-t bg-gray-50/60">
         <div className="flex flex-col gap-4 p-5">
           <div>
