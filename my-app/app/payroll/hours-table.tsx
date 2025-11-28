@@ -260,15 +260,15 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
                 />
               </th>
               <th className="p-3 text-left">Employee</th>
-              <th className="p-3 text-left">Pay Type</th>
+              <th className="p-3 text-left">Type</th>
               <th className="p-3 text-right">Rate / Period</th>
-              <th className="p-3 text-right">Hours (excl. OT)</th>
+              <th className="p-3 text-right">Hours (total, excl. OT)</th>
               <th className="p-3 text-right">Overtime Hours (OT)</th>
-              <th className="p-3 text-right">Public Holiday Hours</th>
+              <th className="p-3 text-right">Holiday hours (within total)</th>
               <th className="p-3 text-right">Base Pay</th>
               <th className="p-3 text-right">Vacation Pay</th>
               <th className="p-3 text-center">Include Vacation</th>
-              <th className="p-3 text-right">Gross Pay</th>
+              <th className="p-3 text-right">Gross</th>
             </tr>
           </thead>
 
