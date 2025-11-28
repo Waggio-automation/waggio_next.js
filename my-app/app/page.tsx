@@ -27,7 +27,7 @@ export default async function HomePage() {
         <h1 className="text-2xl font-bold">Waggio Payroll</h1>
         <nav className="flex gap-3">
           <Link href="/employees" className="underline">Employees</Link>
-          <Link href="/employees" className="underline">Quick Add</Link>
+          <Link href="/payroll" className="underline">Create Paystub</Link>
         </nav>
       </header>
 
@@ -51,12 +51,41 @@ export default async function HomePage() {
         </div>
 
         <div className="border rounded-lg p-4">
-          <div className="text-sm text-gray-500">Docs</div>
-          <ul className="mt-2 list-disc list-inside text-sm space-y-1">
-            <li><span>Bi-weekly payroll flow (n8n)</span></li>
-            <li><span>EFT/CSV export (coming soon)</span></li>
+          <div className="text-sm text-gray-500">Support & Next Steps</div>
+          <ul className="mt-2 space-y-1 text-sm">
+            <li>
+              <Link
+                href="/employees/create"
+                className="flex items-center gap-2 rounded-md px-3 py-1 transition-all
+                hover:bg-gray-100 hover:scale-[1.02] hover:shadow-sm"
+              >
+                👤 Add employee
+              </Link>
+            </li>
+
+            <li>
+              <Link
+                href="/payroll"
+                className="flex items-center gap-2 rounded-md px-3 py-1 transition-all
+                hover:bg-gray-100 hover:scale-[1.02] hover:shadow-sm"
+              >
+                📄 Generate paystub
+              </Link>
+            </li>
+
+            <li className="flex items-center gap-2 rounded-md px-3 py-1 transition-all
+                hover:bg-gray-100 hover:scale-[1.02] hover:shadow-sm">
+              📤 Export payroll <span className="text-gray-400 text-xs">(soon)</span>
+            </li>
+
+            <li className="flex items-center gap-2 rounded-md px-3 py-1 transition-all
+                hover:bg-gray-100 hover:scale-[1.02] hover:shadow-sm">
+              💬 Waggio AI assistant
+            </li>
           </ul>
         </div>
+
+
       </section>
 
       {/* Recent employees */}
