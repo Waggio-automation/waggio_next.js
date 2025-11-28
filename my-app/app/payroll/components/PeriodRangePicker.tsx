@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react"; // 1. useRef, useEffect 추가
 import { DayPicker, DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
 
@@ -29,10 +29,29 @@ export default function PeriodRangePicker({
   hint?: string;
 }) {
   const [open, setOpen] = useState(false);
+  
+  // 2. 팝업 영역을 감지할 Ref 생성
+  const popupRef = useRef<HTMLDivElement>(null);
+
   const selected: DateRange | undefined = {
     from: parseYmd(value.start),
     to: parseYmd(value.end),
   };
+
+  // 3. 화면 바깥 클릭 감지 로직
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      // 팝업이 열려있고, 클릭한 곳이 팝업 내부(popupRef)가 아니라면 닫기
+      if (open && popupRef.current && !popupRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [open]);
 
   const handleSelect = (range: DateRange | undefined) => {
     if (!range || !range.from) {
@@ -64,7 +83,11 @@ export default function PeriodRangePicker({
 
       {open && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30">
-          <div className="rounded-xl border bg-white p-4 shadow-2xl">
+          {/* 4. 흰색 달력 박스에 ref={popupRef} 연결 */}
+          <div 
+            ref={popupRef} 
+            className="rounded-xl border bg-white p-4 shadow-2xl"
+          >
             <h4 className="mb-2 text-sm font-semibold text-gray-700">{label}</h4>
             <DayPicker
               mode="range"
