@@ -78,10 +78,6 @@ export default async function HomePage() {
               📤 Export payroll <span className="text-gray-400 text-xs">(soon)</span>
             </li>
 
-            <li className="flex items-center gap-2 rounded-md px-3 py-1 transition-all
-                hover:bg-gray-100 hover:scale-[1.02] hover:shadow-sm">
-              💬 Waggio AI assistant
-            </li>
           </ul>
         </div>
 
