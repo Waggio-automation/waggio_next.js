@@ -1,7 +1,7 @@
 // app/(...)/components/HoursTable.tsx
 "use client";
 
-import { useMemo, useState, useRef, useEffect } from "react";
+import { useMemo, useState, useRef, useEffect, Fragment  } from "react";
 import PeriodRangePicker from "./components/PeriodRangePicker";
 import { getOntarioHolidaysInRange } from "@/lib/ontarioHolidays";
 import Link from "next/link";
@@ -29,6 +29,17 @@ type RowState = {
 };
 
 const HOLIDAY_MULTIPLIER = 1.5; // Hourly rate multiplier for public holiday hours
+
+// === 2025 Ontario (preview) deduction rates ===
+// NOTE: This is an estimate/preview. Final paystub should be calculated/verified server-side.
+const CPP_RATE = 0.0595; // 5.95%
+const EI_RATE = 0.0166; // 1.66%
+const FEDERAL_TAX_RATE = 0.15; // First bracket (simplified)
+const PROV_TAX_RATE = 0.0505; // Ontario first bracket (simplified)
+const TOTAL_TAX_RATE = FEDERAL_TAX_RATE + PROV_TAX_RATE; // ~20.05%
+
+// Round to 2 decimals
+const r2 = (n: number) => Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
 
 function fmtDate(d: Date) {
   const y = d.getFullYear();
@@ -69,20 +80,19 @@ function DateField({
 }
 
 export default function HoursTable({ employees }: { employees: EmployeeRow[] }) {
-  const [rowsState, setRowsState] = useState<Record<string, RowState>>(
-    () =>
-      Object.fromEntries(
-        employees.map((e) => [
-          e.id,
-          {
-            include: true,
-            hours: 0,
-            overtime: 0,
-            includeVacation: true,
-            holidayHours: 0,
-          },
-        ])
-      )
+  const [rowsState, setRowsState] = useState<Record<string, RowState>>(() =>
+    Object.fromEntries(
+      employees.map((e) => [
+        e.id,
+        {
+          include: true,
+          hours: 0,
+          overtime: 0,
+          includeVacation: true,
+          holidayHours: 0,
+        },
+      ])
+    )
   );
 
   const [period, setPeriod] = useState({ start: "", end: "" });
@@ -90,6 +100,9 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
   const [sendOn, setSendOn] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<{ ok?: string; err?: string }>({});
+
+  // Expand details per-row (dropdown)
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   // ✅ Calculate Ontario public holidays within the selected pay period
   const periodHolidays = useMemo(() => {
@@ -126,16 +139,20 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
   const rows = employees.map((e) => {
     const st = rowsState[e.id];
     const rate = e.hourlyRate ?? 0;
+
     let base = 0;
 
     if (e.payType === "HOURLY") {
-      const totalHours = st.hours || 0; 
-      const holidayHours = st.holidayHours || 0;
+      const totalHours = Number(st?.hours || 0);
+      const holidayHoursInput = Number(st?.holidayHours || 0);
+
+      // Keep holiday hours within [0, totalHours]
+      const holidayHours = Math.min(Math.max(holidayHoursInput, 0), Math.max(totalHours, 0));
       const normalHours = Math.max(totalHours - holidayHours, 0);
 
       const regularPay = rate * normalHours;
       const holidayPay = rate * HOLIDAY_MULTIPLIER * holidayHours;
-      const overtimePay = rate * 1.5 * (st.overtime || 0);
+      const overtimePay = rate * 1.5 * Number(st?.overtime || 0);
 
       base = regularPay + holidayPay + overtimePay;
     } else {
@@ -143,24 +160,48 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
       base = e.payGroup === "BI_WEEKLY" ? sal / 26 : sal / 12;
     }
 
-    const vacation = st.includeVacation ? base * (e.vacationPay / 100) : 0;
+    const vacation = st?.includeVacation ? base * (e.vacationPay / 100) : 0;
     const gross = base + vacation;
 
-    return { ...e, state: st, base, vacation, gross };
+    // Preview deductions (simplified)
+    const ded_cpp = r2(gross * CPP_RATE);
+    const ded_ei = r2(gross * EI_RATE);
+    const ded_tax = r2(gross * TOTAL_TAX_RATE);
+    const totalDeductions = r2(ded_cpp + ded_ei + ded_tax);
+    const netPay = r2(gross - totalDeductions);
+
+    return {
+      ...e,
+      state: st,
+      base: r2(base),
+      vacation: r2(vacation),
+      gross: r2(gross),
+      ded_cpp,
+      ded_ei,
+      ded_tax,
+      totalDeductions,
+      netPay,
+    };
   });
 
-  const totals = rows.reduce(
-    (acc, r) => ({
-      base: acc.base + r.base,
-      vacation: acc.vacation + r.vacation,
-      gross: acc.gross + r.gross,
-    }),
-    { base: 0, vacation: 0, gross: 0 }
-  );
+  // Totals for selected employees only (matches label)
+  const totals = rows
+    .filter((r) => r.state?.include)
+    .reduce(
+      (acc, r) => ({
+        base: r2(acc.base + r.base),
+        vacation: r2(acc.vacation + r.vacation),
+        gross: r2(acc.gross + r.gross),
+        deductions: r2(acc.deductions + r.totalDeductions),
+        net: r2(acc.net + r.netPay),
+      }),
+      { base: 0, vacation: 0, gross: 0, deductions: 0, net: 0 }
+    );
 
   async function saveSelectedToPayHistory() {
     setMsg({});
-    const idemKey = typeof window !== "undefined" && crypto?.randomUUID ? crypto.randomUUID() : "";
+    const idemKey =
+      typeof window !== "undefined" && crypto?.randomUUID ? crypto.randomUUID() : "";
 
     try {
       setSubmitting(true);
@@ -168,8 +209,7 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
       if (!period.start || !period.end)
         throw new Error("Please select the start and end of the pay period.");
       if (!payDate) throw new Error("Please select a pay date.");
-      if (!sendOn)
-        throw new Error("Please select the date to send the paystub.");
+      if (!sendOn) throw new Error("Please select the date to send the paystub.");
 
       const payDateObj = parseYmd(payDate);
       const endObj = parseYmd(period.end);
@@ -190,12 +230,8 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
           holidayHours: r.payType === "HOURLY" ? r.state.holidayHours : 0,
         }));
 
-      if (!items.length)
-        throw new Error("No employees selected to run payroll.");
+      if (!items.length) throw new Error("No employees selected to run payroll.");
 
-      // 🔥 여기가 핵심 변경 사항입니다! 🔥
-      // 기존: /api/payhistory (단순 저장)
-      // 변경: /api/payroll/update-status (n8n 연동 API)
       const res = await fetch("/api/payroll/update-status", {
         method: "POST",
         headers: {
@@ -203,26 +239,22 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
           "Idempotency-Key": crypto.randomUUID(),
         },
         body: JSON.stringify({
-          // n8n 호출을 위한 스케줄 데이터 구조
           schedule: {
             employeeIds: items.map((i) => i.employeeId),
             payDate,
             periodStart: period.start,
             periodEnd: period.end,
-            sendAt: sendOn, // 여기를 sendAt으로 맞춰줍니다
-            timezone: "America/Toronto" 
+            sendAt: sendOn,
+            timezone: "America/Toronto",
           },
-          // 백엔드에서 필요할 수 있으니 추가 정보도 같이 전송
-          status: "PENDING"
+          status: "PENDING",
         }),
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Request failed");
 
-      // 메시지 부분은 n8n 응답 구조에 따라 조금 다를 수 있지만, 일단 성공으로 처리
       setMsg({ ok: `Successfully triggered Payroll Workflow! (n8n)` });
-
     } catch (e: any) {
       setMsg({ err: e.message });
     } finally {
@@ -268,125 +300,342 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
               <th className="p-3 text-right">Base Pay</th>
               <th className="p-3 text-right">Vacation Pay</th>
               <th className="p-3 text-center">Include Vacation</th>
-              <th className="p-3 text-right">Gross</th>
+
+              {/* ✅ Gross -> Net Pay */}
+              <th className="p-3 text-right">Net Pay</th>
+              <th className="p-3 text-center">Details</th>
             </tr>
           </thead>
 
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className={`border-t ${!r.state.include ? "opacity-50" : ""}`}>
-                <td className="p-3 text-center">
-                  <input
-                    type="checkbox"
-                    checked={r.state.include}
-                    onChange={(e) =>
-                      setRowsState((prev) => ({
-                        ...prev,
-                        [r.id]: { ...prev[r.id], include: e.target.checked },
-                      }))
-                    }
-                  />
-                </td>
-                <td className="p-3">{r.firstName} {r.lastName}</td>
-                <td className="p-3">{r.payType}</td>
+            {rows.map((r) => {
+              const isExpanded = !!expanded[r.id];
 
-                <td className="p-3 text-right">
-                  {r.payType === "HOURLY"
-                    ? r.hourlyRate != null
-                      ? formatCad.format(r.hourlyRate) + " / hr"
-                      : "-"
-                    : r.payGroup === "BI_WEEKLY"
-                    ? formatCad.format((r.salary ?? 0) / 26) + " / biweekly"
-                    : formatCad.format((r.salary ?? 0) / 12) + " / monthly"}
-                </td>
+              return (
+                <Fragment key={r.id}>
+                  <tr
+                    key={r.id}
+                    className={`border-t ${!r.state.include ? "opacity-50" : ""}`}
+                  >
+                    <td className="p-3 text-center">
+                      <input
+                        type="checkbox"
+                        checked={r.state.include}
+                        onChange={(e) =>
+                          setRowsState((prev) => ({
+                            ...prev,
+                            [r.id]: { ...prev[r.id], include: e.target.checked },
+                          }))
+                        }
+                      />
+                    </td>
 
-                <td className="p-3 text-right">
-                  {r.payType === "HOURLY" ? (
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.25"
-                      value={r.state.hours}
-                      onChange={(e) =>
-                        setRowsState((prev) => ({
-                          ...prev,
-                          [r.id]: { ...prev[r.id], hours: Number(e.target.value) || 0 },
-                        }))
-                      }
-                      className="w-20 rounded border p-1 text-right"
-                      disabled={!r.state.include}
-                    />
-                  ) : (
-                    <span className="text-gray-400">n/a</span>
+                    <td className="p-3">
+                      {r.firstName} {r.lastName}
+                    </td>
+
+                    <td className="p-3">{r.payType}</td>
+
+                    <td className="p-3 text-right">
+                      {r.payType === "HOURLY"
+                        ? r.hourlyRate != null
+                          ? formatCad.format(r.hourlyRate) + " / hr"
+                          : "-"
+                        : r.payGroup === "BI_WEEKLY"
+                        ? formatCad.format((r.salary ?? 0) / 26) + " / biweekly"
+                        : formatCad.format((r.salary ?? 0) / 12) + " / monthly"}
+                    </td>
+
+                    <td className="p-3 text-right">
+                      {r.payType === "HOURLY" ? (
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.25"
+                          value={r.state.hours}
+                          onChange={(e) =>
+                            setRowsState((prev) => ({
+                              ...prev,
+                              [r.id]: {
+                                ...prev[r.id],
+                                hours: Number(e.target.value) || 0,
+                              },
+                            }))
+                          }
+                          className="w-20 rounded border p-1 text-right"
+                          disabled={!r.state.include}
+                        />
+                      ) : (
+                        <span className="text-gray-400">n/a</span>
+                      )}
+                    </td>
+
+                    <td className="p-3 text-right">
+                      {r.payType === "HOURLY" ? (
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.25"
+                          value={r.state.overtime}
+                          onChange={(e) =>
+                            setRowsState((prev) => ({
+                              ...prev,
+                              [r.id]: {
+                                ...prev[r.id],
+                                overtime: Number(e.target.value) || 0,
+                              },
+                            }))
+                          }
+                          className="w-20 rounded border p-1 text-right"
+                          disabled={!r.state.include}
+                        />
+                      ) : (
+                        <span className="text-gray-400">n/a</span>
+                      )}
+                    </td>
+
+                    <td className="p-3 text-right">
+                      {r.payType === "HOURLY" ? (
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.25"
+                          value={r.state.holidayHours}
+                          onChange={(e) =>
+                            setRowsState((prev) => ({
+                              ...prev,
+                              [r.id]: {
+                                ...prev[r.id],
+                                holidayHours: Number(e.target.value) || 0,
+                              },
+                            }))
+                          }
+                          className="w-20 rounded border p-1 text-right"
+                          disabled={!r.state.include}
+                        />
+                      ) : (
+                        <span className="text-gray-400">n/a</span>
+                      )}
+                    </td>
+
+                    <td className="p-3 text-right">{formatCad.format(r.base)}</td>
+
+                    <td className="p-3 text-right">
+                      {r.vacation ? formatCad.format(r.vacation) : "-"}
+                    </td>
+
+                    <td className="p-3 text-center">
+                      <input
+                        type="checkbox"
+                        checked={r.state.includeVacation}
+                        onChange={(e) =>
+                          setRowsState((prev) => ({
+                            ...prev,
+                            [r.id]: { ...prev[r.id], includeVacation: e.target.checked },
+                          }))
+                        }
+                        disabled={!r.state.include}
+                      />
+                    </td>
+
+                    {/* ✅ Net Pay cell with hover tooltip */}
+                    <td className="p-3 text-right font-semibold">
+                      <span className="relative inline-block">
+                        <span className="cursor-default">
+                          {formatCad.format(r.netPay)}
+                        </span>
+
+                        {/* Hover tooltip (desktop-friendly). Click details for mobile. */}
+                        <span className="pointer-events-none absolute right-0 top-full z-20 mt-2 hidden w-72 rounded-lg border border-gray-200 bg-white p-3 text-left text-xs text-gray-700 shadow-lg group-hover:block">
+                          {/* kept hidden by default; enabled below via wrapper */}
+                        </span>
+                      </span>
+
+                      {/* Tooltip wrapper using group */}
+                      <span className="group relative inline-block">
+                        <span className="sr-only">Net pay breakdown</span>
+                        <span className="pointer-events-none absolute right-0 top-full z-20 mt-2 hidden w-72 rounded-lg border border-gray-200 bg-white p-3 text-left text-xs text-gray-700 shadow-lg group-hover:block">
+                          <div className="mb-2 font-medium text-gray-900">
+                            Estimated deductions (preview)
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex justify-between">
+                              <span>Gross</span>
+                              <span className="font-medium">{formatCad.format(r.gross)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>CPP</span>
+                              <span>{formatCad.format(r.ded_cpp)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>EI</span>
+                              <span>{formatCad.format(r.ded_ei)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Federal + ON tax</span>
+                              <span>{formatCad.format(r.ded_tax)}</span>
+                            </div>
+                            <div className="my-1 border-t pt-1 flex justify-between">
+                              <span className="font-medium">Total deductions</span>
+                              <span className="font-medium">
+                                {formatCad.format(r.totalDeductions)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="font-medium text-gray-900">Net Pay</span>
+                              <span className="font-semibold text-gray-900">
+                                {formatCad.format(r.netPay)}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="mt-2 text-[11px] text-gray-500">
+                            Preview only. Final paystub may differ.
+                          </div>
+                        </span>
+                      </span>
+                    </td>
+
+                    {/* Details dropdown toggle */}
+                    <td className="p-3 text-center">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpanded((prev) => ({
+                            ...prev,
+                            [r.id]: !prev[r.id],
+                          }))
+                        }
+                        className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-60"
+                        disabled={!r.state.include}
+                        aria-expanded={isExpanded}
+                        aria-controls={`row-details-${r.id}`}
+                      >
+                        <span>Details</span>
+                        <span className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}>
+                          ▾
+                        </span>
+                      </button>
+                    </td>
+                  </tr>
+
+                  {/* Expanded details row */}
+                  {isExpanded && (
+                    <tr className="border-t bg-gray-50/60">
+                      <td colSpan={12} className="p-4">
+                        <div
+                          id={`row-details-${r.id}`}
+                          className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 text-xs"
+                        >
+                          <div className="rounded-lg border border-gray-200 bg-white p-3">
+                            <div className="mb-2 font-medium text-gray-900">Pay summary</div>
+                            <div className="space-y-1">
+                              <div className="flex justify-between">
+                                <span>Base</span>
+                                <span className="font-medium">
+                                  {formatCad.format(r.base)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Vacation</span>
+                                <span className="font-medium">
+                                  {formatCad.format(r.vacation)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Gross</span>
+                                <span className="font-medium">
+                                  {formatCad.format(r.gross)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between border-t pt-1">
+                                <span className="font-medium">Net Pay</span>
+                                <span className="font-semibold">
+                                  {formatCad.format(r.netPay)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="rounded-lg border border-gray-200 bg-white p-3">
+                            <div className="mb-2 font-medium text-gray-900">
+                              Estimated deductions (preview)
+                            </div>
+                            <div className="space-y-1">
+                              <div className="flex justify-between">
+                                <span>CPP</span>
+                                <span>{formatCad.format(r.ded_cpp)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>EI</span>
+                                <span>{formatCad.format(r.ded_ei)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Federal + ON tax</span>
+                                <span>{formatCad.format(r.ded_tax)}</span>
+                              </div>
+                              <div className="flex justify-between border-t pt-1">
+                                <span className="font-medium">Total deductions</span>
+                                <span className="font-medium">
+                                  {formatCad.format(r.totalDeductions)}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="mt-2 text-[11px] text-gray-500">
+                              Preview only. Final paystub may differ.
+                            </div>
+                          </div>
+
+                          <div className="rounded-lg border border-gray-200 bg-white p-3">
+                            <div className="mb-2 font-medium text-gray-900">Inputs</div>
+                            <div className="space-y-1">
+                              <div className="flex justify-between">
+                                <span>Total hours</span>
+                                <span>{r.payType === "HOURLY" ? r.state.hours : "n/a"}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>OT hours</span>
+                                <span>{r.payType === "HOURLY" ? r.state.overtime : "n/a"}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Holiday hours</span>
+                                <span>
+                                  {r.payType === "HOURLY" ? r.state.holidayHours : "n/a"}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Include vacation</span>
+                                <span>{r.state.includeVacation ? "Yes" : "No"}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
                   )}
-                </td>
-
-                <td className="p-3 text-right">
-                  {r.payType === "HOURLY" ? (
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.25"
-                      value={r.state.overtime}
-                      onChange={(e) =>
-                        setRowsState((prev) => ({
-                          ...prev,
-                          [r.id]: { ...prev[r.id], overtime: Number(e.target.value) || 0 },
-                        }))
-                      }
-                      className="w-20 rounded border p-1 text-right"
-                      disabled={!r.state.include}
-                    />
-                  ) : <span className="text-gray-400">n/a</span>}
-                </td>
-
-                <td className="p-3 text-right">
-                  {r.payType === "HOURLY" ? (
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.25"
-                      value={r.state.holidayHours}
-                      onChange={(e) =>
-                        setRowsState((prev) => ({
-                          ...prev,
-                          [r.id]: { ...prev[r.id], holidayHours: Number(e.target.value) || 0 },
-                        }))
-                      }
-                      className="w-20 rounded border p-1 text-right"
-                      disabled={!r.state.include}
-                    />
-                  ) : <span className="text-gray-400">n/a</span>}
-                </td>
-
-                <td className="p-3 text-right">{formatCad.format(r.base)}</td>
-                <td className="p-3 text-right">{r.vacation ? formatCad.format(r.vacation) : "-"}</td>
-                <td className="p-3 text-center">
-                  <input
-                    type="checkbox"
-                    checked={r.state.includeVacation}
-                    onChange={(e) =>
-                      setRowsState((prev) => ({
-                        ...prev,
-                        [r.id]: { ...prev[r.id], includeVacation: e.target.checked },
-                      }))
-                    }
-                    disabled={!r.state.include}
-                  />
-                </td>
-
-                <td className="p-3 text-right font-medium">{formatCad.format(r.gross)}</td>
-              </tr>
-            ))}
+                </Fragment>
+              );
+            })}
           </tbody>
 
           <tfoot className="bg-gray-50">
             <tr className="font-semibold border-t">
-              <td className="p-3" colSpan={7}>Totals (selected employees only)</td>
+              <td className="p-3" colSpan={7}>
+                Totals (selected employees only)
+              </td>
               <td className="p-3 text-right">{formatCad.format(totals.base)}</td>
               <td className="p-3 text-right">{formatCad.format(totals.vacation)}</td>
-              <td />
-              <td className="p-3 text-right">{formatCad.format(totals.gross)}</td>
+              <td className="p-3 text-right">
+                {/* spacer for Include Vacation column */}
+              </td>
+
+              {/* Net Pay totals + details column */}
+              <td className="p-3 text-right">{formatCad.format(totals.net)}</td>
+              <td className="p-3 text-center">
+                <span className="text-[11px] text-gray-500">
+                  Deductions: {formatCad.format(totals.deductions)}
+                </span>
+              </td>
             </tr>
           </tfoot>
         </table>
