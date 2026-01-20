@@ -37,7 +37,9 @@ export default async function HomePage() {
           <div className="text-sm text-gray-500">Employees</div>
           <div className="text-3xl font-semibold mt-1">{employeeCount}</div>
           <div className="mt-3">
-            <Link href="/employees" className="text-sm underline">View all →</Link>
+            <Link href="/employees?view=all" className="text-sm underline">
+              View all →
+            </Link>
           </div>
         </div>
 
@@ -106,7 +108,7 @@ export default async function HomePage() {
                 <td className="p-3">{e.email}</td>
                 <td className="p-3">{e.employmentType}</td>
                 <td className="p-3">{e.payType}</td>
-                <td className="p-3">{new Date(e.createdAt as any).toLocaleDateString()}</td>
+                <td className="p-3">{e.createdAt.toLocaleDateString()}</td>
               </tr>
             ))}
             {recentEmployees.length === 0 && (
