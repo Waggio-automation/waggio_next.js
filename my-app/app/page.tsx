@@ -16,7 +16,7 @@ export default async function HomePage() {
         email: true,
         employmentType: true,
         payType: true,
-        createdAt: true,
+        hireDate: true,
       },
     }),
   ]);
@@ -96,7 +96,7 @@ export default async function HomePage() {
               <th className="text-left p-3">Email</th>
               <th className="text-left p-3">Employment</th>
               <th className="text-left p-3">Pay Type</th>
-              <th className="text-left p-3">Created</th>
+              <th className="text-left p-3">Hire Date</th>
             </tr>
           </thead>
           <tbody>
@@ -106,7 +106,7 @@ export default async function HomePage() {
                 <td className="p-3">{e.email}</td>
                 <td className="p-3">{e.employmentType}</td>
                 <td className="p-3">{e.payType}</td>
-                <td className="p-3">{new Date(e.createdAt as any).toLocaleDateString()}</td>
+                <td className="p-3">{new Date(e.hireDate).toLocaleDateString()}</td>
               </tr>
             ))}
             {recentEmployees.length === 0 && (

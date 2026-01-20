@@ -38,7 +38,7 @@ export default async function PayrollPage() {
   }));
 
   return (
-    <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
+    <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8 space-y-6">
       {/* 🔹 상단 헤더 */}
       <header className="space-y-3">
         {/* 작고 심플한 백 링크 */}
@@ -51,16 +51,18 @@ export default async function PayrollPage() {
         </Link>
 
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight text-gray-900">
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-gray-900">
             Payroll Paystub Generator
           </h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <p className="mt-1 text-sm sm:text-base text-gray-500">
             Run payroll, calculate hours (including holidays), and save paystubs for your team.
           </p>
         </div>
       </header>
 
-      <HoursTable employees={employees} />
+      <div className="-mx-4 sm:mx-0">
+        <HoursTable employees={employees} />
+      </div>
     </main>
   );
 }

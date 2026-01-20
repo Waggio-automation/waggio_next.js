@@ -269,8 +269,8 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
       </div>
 
       {/* Employee table */}
-      <div className="bg-white">
-        <table className="min-w-full text-sm">
+      <div className="bg-white overflow-x-auto">
+        <table className="w-full min-w-[980px] text-sm">
           <thead className="bg-gray-50">
             <tr>
               <th className="p-3 text-center">
