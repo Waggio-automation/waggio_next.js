@@ -66,5 +66,4 @@ export async function createEmployee(formData: FormData) {
   }
 
   revalidatePath("/employees"); // 목록 즉시 갱신
-  return { ok: true };
 }

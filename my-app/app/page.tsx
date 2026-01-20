@@ -37,7 +37,9 @@ export default async function HomePage() {
           <div className="text-sm text-gray-500">Employees</div>
           <div className="text-3xl font-semibold mt-1">{employeeCount}</div>
           <div className="mt-3">
-            <Link href="/employees" className="text-sm underline">View all →</Link>
+            <Link href="/employees?view=all" className="text-sm underline">
+              View all →
+            </Link>
           </div>
         </div>
 
