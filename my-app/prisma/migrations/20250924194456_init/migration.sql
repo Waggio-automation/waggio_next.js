@@ -92,6 +92,12 @@ CREATE TABLE "public"."PayHistory" (
 
     "netPay"       DECIMAL(65,30) NOT NULL,
     "status"       "public"."PayStatus" NOT NULL DEFAULT 'PENDING',
+    "paidAt"       TIMESTAMP(3),
+    "paymentProvider" TEXT,
+    "paymentRef"      TEXT,
+    "failureReason"   TEXT,
+    "attemptCount"    INTEGER NOT NULL DEFAULT 0,
+    "lastAttemptAt"   TIMESTAMP(3),
 
     -- ✅ Validation/Review fields
     "review_valid"    BOOLEAN NOT NULL DEFAULT true,
