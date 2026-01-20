@@ -88,6 +88,12 @@ model PayHistory {
   ded_wsib        Decimal       @default(0)
   netPay          Decimal
   status          PayStatus     @default(PENDING)
+  paidAt          DateTime?
+  paymentProvider String?
+  paymentRef      String?
+  failureReason   String?
+  attemptCount    Int           @default(0)
+  lastAttemptAt   DateTime?
   review_valid    Boolean       @default(true)
   review_errors   String[]      @default([])
   review_warnings String[]      @default([])
