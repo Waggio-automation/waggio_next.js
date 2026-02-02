@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
     const idsParam = searchParams.get('ids');
 
     // 2. 검색 조건 만들기
-    const whereClause: any = { status: 'PENDING' };
+    const whereClause: { status: "PENDING"; employeeId?: { in: bigint[] } } = { status: "PENDING" };
 
     // 만약 ids가 있으면, 그 ID를 가진 직원만 필터링!
     if (idsParam) {
@@ -31,8 +31,11 @@ export async function GET(req: NextRequest) {
     );
 
     return NextResponse.json(serialized);
-  } catch (error) {
-    console.error('Error fetching payroll data:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    console.error("Error fetching payroll data:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to export payroll data" },
+      { status: 500 }
+    );
   }
 }

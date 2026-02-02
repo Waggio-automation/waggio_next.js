@@ -39,11 +39,8 @@ export async function createEmployee(formData: FormData) {
       bonus      : parsed.bonus,
       federalTD1 : parsed.federalTD1,
       provincialTD1: parsed.provincialTD1,
-
-      bankName: parsed.bankName || null,
-      bankAccount: parsed.bankAccount || null,
-      transitNumber: parsed.transitNumber || null,
-      institutionNumber: parsed.institutionNumber || null,
+      payoutSetupStatus: "REQUIRED",
+      payoutEnabled: false,
     },
   });
 

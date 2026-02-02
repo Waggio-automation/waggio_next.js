@@ -32,15 +32,16 @@ export async function POST(req: NextRequest) {
         addrLine2: parsed.addrLine2 || null,
         hourlyRate: parsed.hourlyRate ?? null,
         salary: parsed.salary ?? null,
-        bankName: parsed.bankName || null,
-        bankAccount: parsed.bankAccount || null,
-        transitNumber: parsed.transitNumber || null,
-        institutionNumber: parsed.institutionNumber || null,
+        payoutSetupStatus: "REQUIRED",
+        payoutEnabled: false,
       },
     });
 
     return NextResponse.json({ ok:true, id: created.id.toString() }, { status: 201 });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Invalid payload" }, { status: 400 });
+  } catch (e: unknown) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Invalid payload" },
+      { status: 400 }
+    );
   }
 }

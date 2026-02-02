@@ -40,10 +40,6 @@ export const employeeInputSchema = z.object({
   provincialTD1: decimalLike.default(12298),
 
   paymentMethod: PaymentMethod.default("CHEQUE"),
-  bankName: z.string().optional(),
-  bankAccount: z.string().optional(),
-  transitNumber: z.string().optional(),
-  institutionNumber: z.string().optional(),
 })
 .superRefine((data, ctx) => {
   if (data.payType === "HOURLY") {
@@ -53,11 +49,5 @@ export const employeeInputSchema = z.object({
   if (data.payType === "SALARY") {
     if (data.salary == null) ctx.addIssue({ code:"custom", message:"salary required for SALARY" });
     if (data.hourlyRate != null) ctx.addIssue({ code:"custom", message:"hourlyRate must be empty for SALARY" });
-  }
-
-  if (data.paymentMethod === "DIRECT_DEPOSIT") {
-    for (const k of ["bankName","bankAccount","transitNumber","institutionNumber"] as const) {
-      if (!data[k]) ctx.addIssue({ code:"custom", message:`${k} required for DIRECT_DEPOSIT` });
-    }
   }
 });

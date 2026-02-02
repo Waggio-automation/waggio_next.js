@@ -197,6 +197,7 @@ export default async function EmployeesPage() {
             <th className="p-3 text-right">Salary</th>
             <th className="p-3 text-left">PayGroup</th>
             <th className="p-3 text-left">Created</th>
+            <th className="p-3 text-left">Detail</th>
           </tr>
         </thead>
         <tbody>
@@ -216,11 +217,19 @@ export default async function EmployeesPage() {
               </td>
               <td className="p-3">{e.payGroup}</td>
               <td className="p-3">{e.createdAt.toLocaleDateString()}</td>
+              <td className="p-3">
+                <Link
+                  href={`/employees/${e.id.toString()}`}
+                  className="text-sm text-indigo-700 hover:text-indigo-500"
+                >
+                  Open
+                </Link>
+              </td>
             </tr>
           ))}
           {employees.length === 0 && (
             <tr>
-              <td className="p-6 text-center text-gray-500" colSpan={8}>
+              <td className="p-6 text-center text-gray-500" colSpan={9}>
                 No employees yet. Create one ↑
               </td>
             </tr>

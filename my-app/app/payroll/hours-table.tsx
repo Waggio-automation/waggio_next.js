@@ -4,7 +4,6 @@
 import { useMemo, useState, useRef, useEffect, Fragment  } from "react";
 import PeriodRangePicker from "./components/PeriodRangePicker";
 import { getOntarioHolidaysInRange } from "@/lib/ontarioHolidays";
-import Link from "next/link";
 
 type EmployeeRow = {
   id: string;
@@ -200,8 +199,6 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
 
   async function saveSelectedToPayHistory() {
     setMsg({});
-    const idemKey =
-      typeof window !== "undefined" && crypto?.randomUUID ? crypto.randomUUID() : "";
 
     try {
       setSubmitting(true);
@@ -255,8 +252,8 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
       if (!res.ok) throw new Error(data?.error || "Request failed");
 
       setMsg({ ok: `Successfully triggered Payroll Workflow! (n8n)` });
-    } catch (e: any) {
-      setMsg({ err: e.message });
+    } catch (e: unknown) {
+      setMsg({ err: e instanceof Error ? e.message : "Failed to run payroll." });
     } finally {
       setSubmitting(false);
     }
@@ -696,7 +693,7 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
 
           <div className="mt-1 flex items-center justify-between">
             <p className="text-[11px] text-gray-500">
-              Tip: "Send paystub on" can auto-set to 2 days before the pay date if left blank.
+              Tip: &quot;Send paystub on&quot; can auto-set to 2 days before the pay date if left blank.
             </p>
 
             <button

@@ -34,6 +34,27 @@ enum PayStatus {
   SENT
 }
 
+enum PayoutSetupStatus {
+  REQUIRED
+  PENDING
+  READY
+  ISSUE
+}
+
+enum PayrollRunStatus {
+  SCHEDULED
+  FUNDING
+  FUNDS_CONFIRMED
+  PAYING
+  PAID
+  FAILED
+}
+
+enum PayrollFailureType {
+  FUNDING
+  EMPLOYEE
+}
+
 model Employee {
   id                BigInt        @id @default(autoincrement())
   firstName         String
@@ -61,10 +82,9 @@ model Employee {
   federalTD1        Decimal       @default(15492)
   provincialTD1     Decimal       @default(12298)
 
-  bankName          String?
-  bankAccount       String?
-  transitNumber     String?
-  institutionNumber String?
+  stripeAccountId   String?       @unique
+  payoutEnabled     Boolean       @default(false)
+  payoutSetupStatus PayoutSetupStatus @default(REQUIRED)
 
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
@@ -78,6 +98,8 @@ model PayHistory {
   id              BigInt       @id @default(autoincrement())
   employee        Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   employeeId      BigInt
+  payrollRun      PayrollRun?  @relation(fields: [payrollRunId], references: [id], onDelete: SetNull)
+  payrollRunId    BigInt?
   payDate         DateTime
   hoursWorked     Decimal?
   grossPay        Decimal
@@ -100,4 +122,21 @@ model PayHistory {
   createdAt       DateTime      @default(now())
 
   @@index([employeeId, payDate])
+  @@index([payrollRunId])
+}
+
+model PayrollRun {
+  id            BigInt            @id @default(autoincrement())
+  payDate       DateTime
+  status        PayrollRunStatus  @default(SCHEDULED)
+  failureType   PayrollFailureType?
+  failureReason String?
+  providerRef   String?
+  meta          Json?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  payHistory    PayHistory[]
+
+  @@index([payDate, status])
 }
