@@ -28,6 +28,7 @@ export default async function HomePage() {
         <nav className="flex gap-3">
           <Link href="/employees" className="underline">Employees</Link>
           <Link href="/payroll" className="underline">Create Paystub</Link>
+          <Link href="/company-settings/payroll" className="underline">Company Settings</Link>
         </nav>
       </header>
 

@@ -57,6 +57,25 @@ export async function createConnectedAccount(params: {
   return stripeFormRequest<StripeAccount>("/accounts", body);
 }
 
+export async function createCompanyConnectedAccount(params: {
+  email: string;
+  country?: string;
+  companyName?: string;
+}) {
+  const body = new URLSearchParams();
+  body.set("type", "express");
+  body.set("email", params.email);
+  body.set("country", params.country ?? "CA");
+  body.set("business_type", "company");
+  body.set("capabilities[transfers][requested]", "true");
+  body.set("metadata[company_account]", "true");
+  if (params.companyName) {
+    body.set("company[name]", params.companyName);
+  }
+
+  return stripeFormRequest<StripeAccount>("/accounts", body);
+}
+
 export async function retrieveConnectedAccount(accountId: string) {
   return stripeFormRequest<StripeAccount>(`/accounts/${accountId}`, new URLSearchParams(), "GET");
 }

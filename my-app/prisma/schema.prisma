@@ -140,3 +140,12 @@ model PayrollRun {
 
   @@index([payDate, status])
 }
+
+model CompanySettings {
+  id                BigInt            @id @default(autoincrement())
+  stripeAccountId   String?           @unique
+  payoutEnabled     Boolean           @default(false)
+  payoutSetupStatus PayoutSetupStatus @default(REQUIRED)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+}

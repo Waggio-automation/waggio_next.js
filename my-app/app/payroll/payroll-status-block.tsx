@@ -80,14 +80,12 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
               {run.status === "failed" && run.failureType === "employee" ? (
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm text-red-700">Employee payout failed</p>
-                  {run.employeeIssueId ? (
-                    <Link
-                      href={`/employees/${run.employeeIssueId}`}
-                      className="rounded border px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                    >
-                      Fix employee payment setup
-                    </Link>
-                  ) : null}
+                  <Link
+                    href="/company-settings/payroll"
+                    className="rounded border px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                  >
+                    Review company bank account
+                  </Link>
                 </div>
               ) : null}
 
