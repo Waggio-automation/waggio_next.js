@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCompanyFromCookie } from "@/lib/company-auth";
+import { getOrCreateCompanySettings } from "@/lib/company-settings";
 import {
   createCompanyConnectedAccount,
   createOnboardingLink,
@@ -10,44 +12,23 @@ import {
   toPrismaEmployeePayoutStatus,
 } from "@/lib/payments/status-mapping";
 
-async function getOrCreateCompanySettings() {
-  const existing = await prisma.companySettings.findFirst({
-    orderBy: { id: "asc" },
-  });
-
-  if (existing) return existing;
-
-  return prisma.companySettings.create({ data: {} });
-}
-
-function getCompanyEmail() {
-  return (
-    process.env.COMPANY_OWNER_EMAIL ||
-    process.env.COMPANY_EMAIL ||
-    process.env.STRIPE_COMPANY_EMAIL ||
-    ""
-  );
-}
-
 export async function POST(req: NextRequest) {
-  const settings = await getOrCreateCompanySettings();
-  const companyEmail = getCompanyEmail();
-
-  if (!companyEmail) {
-    return NextResponse.json(
-      { error: "Company email is not configured. Set COMPANY_OWNER_EMAIL." },
-      { status: 500 }
-    );
+  const company = await getCompanyFromCookie();
+  if (!company) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const settings = await getOrCreateCompanySettings(company.id);
 
   try {
     let stripeAccountId = settings.stripeAccountId;
 
     if (!stripeAccountId) {
       const account = await createCompanyConnectedAccount({
-        email: companyEmail,
+        email: company.adminEmail,
         country: process.env.COMPANY_COUNTRY ?? "CA",
-        companyName: process.env.COMPANY_NAME ?? undefined,
+        companyName: company.name ?? undefined,
+        companyId: company.id.toString(),
       });
       stripeAccountId = account.id;
 
@@ -55,6 +36,7 @@ export async function POST(req: NextRequest) {
         where: { id: settings.id },
         data: {
           stripeAccountId,
+          companyId: company.id,
           payoutEnabled: false,
           payoutSetupStatus: "PENDING",
         },
@@ -65,6 +47,7 @@ export async function POST(req: NextRequest) {
       await prisma.companySettings.update({
         where: { id: settings.id },
         data: {
+          companyId: company.id,
           payoutEnabled: derived.payoutEnabled,
           payoutSetupStatus: toPrismaEmployeePayoutStatus(derived.payoutSetupStatus),
         },

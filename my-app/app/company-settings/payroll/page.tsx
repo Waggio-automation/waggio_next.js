@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
 import CompanyBankAccountCard from "./CompanyBankAccountCard";
 import RedirectOnLoad from "./RedirectOnLoad";
+import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
+import { getOrCreateCompanySettings } from "@/lib/company-settings";
 
 function toUiPayoutStatus(status: string) {
   switch (status) {
@@ -19,12 +20,8 @@ function toUiPayoutStatus(status: string) {
 }
 
 export default async function CompanyPayrollSettingsPage() {
-  const settings = await prisma.companySettings.findFirst({
-    orderBy: { id: "asc" },
-    select: {
-      payoutSetupStatus: true,
-    },
-  });
+  const company = await requireCompanyAdminOrRedirect();
+  const settings = await getOrCreateCompanySettings(company.id);
 
   const initialStatus = toUiPayoutStatus(settings?.payoutSetupStatus ?? "REQUIRED");
 

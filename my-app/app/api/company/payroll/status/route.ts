@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getCompanyFromCookie } from "@/lib/company-auth";
+import { getOrCreateCompanySettings } from "@/lib/company-settings";
 
 function toUiStatus(status: string | null | undefined) {
   switch (status) {
@@ -16,18 +17,13 @@ function toUiStatus(status: string | null | undefined) {
   }
 }
 
-async function getOrCreateCompanySettings() {
-  const existing = await prisma.companySettings.findFirst({
-    orderBy: { id: "asc" },
-  });
-
-  if (existing) return existing;
-
-  return prisma.companySettings.create({ data: {} });
-}
-
 export async function GET() {
-  const settings = await getOrCreateCompanySettings();
+  const company = await getCompanyFromCookie();
+  if (!company) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const settings = await getOrCreateCompanySettings(company.id);
 
   return NextResponse.json({
     payoutSetupStatus: toUiStatus(settings.payoutSetupStatus),
