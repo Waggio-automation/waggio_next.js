@@ -159,7 +159,7 @@ model Company {
 
 model CompanySettings {
   id                BigInt            @id @default(autoincrement())
-  companyId         BigInt?
+  companyId         BigInt? @unique
   company           Company?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
   stripeAccountId   String?           @unique
   stripeCustomerId  String?
