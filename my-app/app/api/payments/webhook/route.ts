@@ -1,6 +1,8 @@
-import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
+import { syncCompanySettingsFromAccount } from "@/lib/company-settings";
+import { constructWebhookEvent } from "@/lib/payments/stripe";
 import {
   mapExternalPaymentEventToInternal,
   toPrismaEmployeePayoutStatus,
@@ -8,44 +10,12 @@ import {
   toPrismaPayrollRunStatus,
 } from "@/lib/payments/status-mapping";
 
-type WebhookEvent = {
-  account?: string;
-  data?: {
-    object?: {
-      id?: string;
-      metadata?: {
-        payrollRunId?: string;
-      };
-    };
-  };
-};
-
-function verifyWebhookSignature(rawBody: string, signature: string | null) {
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!secret) return true;
-  if (!signature) return false;
-
-  const parts = signature.split(",").reduce<Record<string, string>>((acc, part) => {
-    const [k, v] = part.split("=");
-    if (k && v) acc[k] = v;
-    return acc;
-  }, {});
-
-  const timestamp = parts.t;
-  const v1 = parts.v1;
-  if (!timestamp || !v1) return false;
-
-  const payloadToSign = `${timestamp}.${rawBody}`;
-  const expected = crypto.createHmac("sha256", secret).update(payloadToSign).digest("hex");
-
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(v1));
-}
-
-function getPayrollRunSelector(event: WebhookEvent):
+function getPayrollRunSelector(event: Stripe.Event):
   | { id: bigint }
   | { providerRef: string }
   | null {
-  const metadata = event?.data?.object?.metadata;
+  const object = event.data.object as { id?: string; metadata?: Record<string, string> };
+  const metadata = object.metadata;
   const payrollRunId = metadata?.payrollRunId;
 
   if (typeof payrollRunId === "string" && payrollRunId.length > 0) {
@@ -56,7 +26,7 @@ function getPayrollRunSelector(event: WebhookEvent):
     }
   }
 
-  const providerRef = event?.data?.object?.id;
+  const providerRef = object?.id;
   if (typeof providerRef === "string" && providerRef.length > 0) {
     return { providerRef };
   }
@@ -68,21 +38,57 @@ export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   const signature = req.headers.get("stripe-signature");
 
-  if (!verifyWebhookSignature(rawBody, signature)) {
-    return NextResponse.json({ error: "Invalid webhook signature" }, { status: 400 });
-  }
-
-  let event: WebhookEvent;
+  let event: Stripe.Event;
   try {
-    event = JSON.parse(rawBody) as WebhookEvent;
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
+    event = constructWebhookEvent(rawBody, signature);
+  } catch (error: unknown) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Invalid webhook signature" },
+      { status: 400 }
+    );
   }
 
-  const mapped = mapExternalPaymentEventToInternal(event);
+  if (event.type === "account.updated") {
+    const account = event.data.object as Stripe.Account;
+    const metadataCompanyId = account.metadata?.companyId;
+    let companyId: bigint | null = null;
+
+    if (metadataCompanyId) {
+      try {
+        companyId = BigInt(metadataCompanyId);
+      } catch {
+        companyId = null;
+      }
+    }
+
+    if (!companyId && account.id) {
+      const settings = await prisma.companySettings.findFirst({
+        where: { stripeAccountId: account.id },
+        select: { companyId: true },
+      });
+      companyId = settings?.companyId ?? null;
+    }
+
+    if (companyId && account.id) {
+      // Keep company onboarding status in sync from Stripe account truth.
+      await syncCompanySettingsFromAccount({
+        companyId,
+        stripeAccountId: account.id,
+        account: account as unknown as Record<string, unknown>,
+      });
+    }
+  }
+
+  const mapped = mapExternalPaymentEventToInternal(
+    event as unknown as {
+      type: string;
+      account?: string;
+      data?: { object?: Record<string, unknown> };
+    }
+  );
 
   if (mapped.employee) {
-    const accountId = mapped.employee.stripeAccountId || event.account;
+    const accountId = mapped.employee.stripeAccountId || event.account || undefined;
 
     if (accountId) {
       await prisma.employee.updateMany({
@@ -106,7 +112,9 @@ export async function POST(req: NextRequest) {
           failureType: toPrismaPayrollFailureType(mapped.payrollRun.failureType),
           failureReason: mapped.payrollRun.failureReason ?? null,
           providerRef:
-            typeof event?.data?.object?.id === "string" ? event.data.object.id : undefined,
+            typeof (event.data.object as { id?: string })?.id === "string"
+              ? (event.data.object as { id: string }).id
+              : undefined,
         },
       });
     }

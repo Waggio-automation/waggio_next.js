@@ -20,7 +20,15 @@ export default function AccessForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
-      const data = await res.json();
+      const responseText = await res.text();
+      let data: { error?: string; magicLink?: string } | null = null;
+      if (responseText) {
+        try {
+          data = JSON.parse(responseText) as { error?: string; magicLink?: string };
+        } catch {
+          data = null;
+        }
+      }
 
       if (!res.ok) {
         throw new Error(data?.error || "Failed to request access link.");

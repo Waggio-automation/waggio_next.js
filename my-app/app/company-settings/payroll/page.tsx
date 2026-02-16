@@ -1,6 +1,5 @@
 import Link from "next/link";
 import CompanyBankAccountCard from "./CompanyBankAccountCard";
-import RedirectOnLoad from "./RedirectOnLoad";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 import { getOrCreateCompanySettings } from "@/lib/company-settings";
 
@@ -36,12 +35,11 @@ export default async function CompanyPayrollSettingsPage() {
           <p className="text-sm text-gray-500">Company Settings</p>
           <h1 className="text-2xl font-semibold">Payroll Settings</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Connect the business owner's bank account to fund payroll runs.
+            Connect the business owner&apos;s bank account to fund payroll runs.
           </p>
         </div>
       </header>
 
-      <RedirectOnLoad />
       <CompanyBankAccountCard initialStatus={initialStatus} />
     </main>
   );

@@ -1,18 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getCompanyFromCookie } from "@/lib/company-auth";
 import { getOrCreateCompanySettings } from "@/lib/company-settings";
 import {
   createCompanyConnectedAccount,
   createOnboardingLink,
-  retrieveConnectedAccount,
 } from "@/lib/payments/stripe";
-import {
-  deriveEmployeeStatusFromAccount,
-  toPrismaEmployeePayoutStatus,
-} from "@/lib/payments/status-mapping";
+import { prisma } from "@/lib/prisma";
 
-export async function POST(req: NextRequest) {
+async function startCompanyOnboarding(req: NextRequest) {
   const company = await getCompanyFromCookie();
   if (!company) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -26,7 +21,7 @@ export async function POST(req: NextRequest) {
     if (!stripeAccountId) {
       const account = await createCompanyConnectedAccount({
         email: company.adminEmail,
-        country: process.env.COMPANY_COUNTRY ?? "CA",
+        country: "CA",
         companyName: company.name ?? undefined,
         companyId: company.id.toString(),
       });
@@ -41,22 +36,11 @@ export async function POST(req: NextRequest) {
           payoutSetupStatus: "PENDING",
         },
       });
-    } else {
-      const account = await retrieveConnectedAccount(stripeAccountId);
-      const derived = deriveEmployeeStatusFromAccount(account as unknown as Record<string, unknown>);
-      await prisma.companySettings.update({
-        where: { id: settings.id },
-        data: {
-          companyId: company.id,
-          payoutEnabled: derived.payoutEnabled,
-          payoutSetupStatus: toPrismaEmployeePayoutStatus(derived.payoutSetupStatus),
-        },
-      });
     }
 
     const origin = req.nextUrl.origin;
-    const returnUrl = `${origin}/company-settings/payroll?setup=done`;
-    const refreshUrl = `${origin}/company-settings/payroll?setup=retry`;
+    const returnUrl = `${origin}/company-settings/payroll/return`;
+    const refreshUrl = `${origin}/api/company/payroll/setup?retry=1`;
 
     const link = await createOnboardingLink({
       accountId: stripeAccountId,
@@ -64,14 +48,19 @@ export async function POST(req: NextRequest) {
       refreshUrl,
     });
 
-    return NextResponse.json({
-      ok: true,
-      onboardingUrl: link.url,
-    });
+    return NextResponse.redirect(link.url);
   } catch (error: unknown) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to start payment setup" },
       { status: 500 }
     );
   }
+}
+
+export async function GET(req: NextRequest) {
+  return startCompanyOnboarding(req);
+}
+
+export async function POST(req: NextRequest) {
+  return startCompanyOnboarding(req);
 }

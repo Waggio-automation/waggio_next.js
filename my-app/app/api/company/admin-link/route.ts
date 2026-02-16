@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
   });
 
   const origin = req.nextUrl.origin;
-  const magicLink = `${origin}/company-settings/verify?token=${token}`;
+  const magicLink = `${origin}/api/company/verify?token=${encodeURIComponent(token)}&companyId=${company.id.toString()}`;
 
   return NextResponse.json({ ok: true, magicLink });
 }

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { deriveCompanyStatusFromAccount, toPrismaEmployeePayoutStatus } from "@/lib/payments/status-mapping";
 
 export async function getOrCreateCompanySettings(companyId: bigint) {
   const existing = await prisma.companySettings.findFirst({
@@ -22,6 +23,25 @@ export async function getOrCreateCompanySettings(companyId: bigint) {
   return prisma.companySettings.create({
     data: {
       companyId,
+    },
+  });
+}
+
+export async function syncCompanySettingsFromAccount(params: {
+  companyId: bigint;
+  stripeAccountId: string;
+  account: Record<string, unknown>;
+}) {
+  const settings = await getOrCreateCompanySettings(params.companyId);
+  const derived = deriveCompanyStatusFromAccount(params.account);
+
+  return prisma.companySettings.update({
+    where: { id: settings.id },
+    data: {
+      companyId: params.companyId,
+      stripeAccountId: params.stripeAccountId,
+      payoutEnabled: derived.payoutEnabled,
+      payoutSetupStatus: toPrismaEmployeePayoutStatus(derived.payoutSetupStatus),
     },
   });
 }
