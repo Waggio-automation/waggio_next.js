@@ -28,30 +28,9 @@ export default function CompanyBankAccountCard({
   }
 
   async function startSetup() {
-    try {
-      setError(null);
-      setLoading(true);
-
-      const res = await fetch("/api/company/payroll/setup", {
-        method: "POST",
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data?.error || "Failed to start payment setup.");
-      }
-
-      if (typeof data?.onboardingUrl === "string") {
-        window.location.assign(data.onboardingUrl);
-        return;
-      }
-
-      await refreshStatus();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to start payment setup.");
-    } finally {
-      setLoading(false);
-    }
+    setError(null);
+    setLoading(true);
+    window.location.assign("/api/company/payroll/setup");
   }
 
   return (
@@ -76,7 +55,7 @@ export default function CompanyBankAccountCard({
             {loading ? "Starting..." : "Connect bank account"}
           </button>
           <p className="text-xs text-gray-500">
-            Connect the business owner's bank account once to fund payroll runs.
+            Connect the business owner&apos;s bank account once to fund payroll runs.
           </p>
         </>
       ) : (

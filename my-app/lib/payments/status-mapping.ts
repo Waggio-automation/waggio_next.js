@@ -84,6 +84,39 @@ export function deriveEmployeeStatusFromAccount(
   return { payoutSetupStatus: "pending", payoutEnabled: false };
 }
 
+export function deriveCompanyStatusFromAccount(
+  account: Record<string, unknown> | undefined
+): { payoutSetupStatus: EmployeePayoutSetupStatus; payoutEnabled: boolean } {
+  if (!account) {
+    return { payoutSetupStatus: "required", payoutEnabled: false };
+  }
+
+  const detailsSubmitted = account.details_submitted === true;
+  const chargesEnabled = account.charges_enabled === true;
+  const payoutsEnabled = account.payouts_enabled === true;
+  const requirements =
+    account.requirements && typeof account.requirements === "object"
+      ? (account.requirements as Record<string, unknown>)
+      : undefined;
+  const currentlyDue = Array.isArray(requirements?.currently_due)
+    ? requirements.currently_due
+    : [];
+
+  if (currentlyDue.length > 0) {
+    return { payoutSetupStatus: "issue", payoutEnabled: false };
+  }
+
+  if (detailsSubmitted && chargesEnabled && payoutsEnabled) {
+    return { payoutSetupStatus: "ready", payoutEnabled: true };
+  }
+
+  if (!detailsSubmitted) {
+    return { payoutSetupStatus: "required", payoutEnabled: false };
+  }
+
+  return { payoutSetupStatus: "pending", payoutEnabled: false };
+}
+
 export function mapExternalPaymentEventToInternal(
   event: ExternalPaymentEvent
 ): {
