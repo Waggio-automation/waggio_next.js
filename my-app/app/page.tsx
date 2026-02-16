@@ -115,7 +115,7 @@ export default async function HomePage() {
             {recentEmployees.length === 0 && (
               <tr>
                 <td className="p-6 text-center text-gray-500" colSpan={5}>
-                  No employees yet. <Link className="underline" href="/submit">Create one</Link>.
+                  No employees yet. <Link className="underline" href="/employees">Create one</Link>.
                 </td>
               </tr>
             )}
