@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getPrimaryCompany } from "@/lib/company";
 import { employeeInputSchema } from "@/app/employees/validators";
 
 // GET: 목록 (민감정보 제외)
@@ -26,12 +27,14 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const parsed = employeeInputSchema.parse(body);
 
+    const company = await getPrimaryCompany();
     const created = await prisma.employee.create({
       data: {
         ...parsed,
         addrLine2: parsed.addrLine2 || null,
         hourlyRate: parsed.hourlyRate ?? null,
         salary: parsed.salary ?? null,
+        companyId: company?.id ?? null,
         payoutSetupStatus: "REQUIRED",
         payoutEnabled: false,
       },

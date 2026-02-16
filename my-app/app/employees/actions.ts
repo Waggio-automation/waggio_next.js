@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { getPrimaryCompany } from "@/lib/company";
 import { employeeInputSchema } from "./validators";
 import { revalidatePath } from "next/cache";
 
@@ -12,8 +13,10 @@ export async function createEmployee(formData: FormData) {
   const parsed = employeeInputSchema.parse(obj);
 
   // 3) 저장
+  const company = await getPrimaryCompany();
   const created = await prisma.employee.create({
     data: {
+      companyId: company?.id ?? null,
       firstName: parsed.firstName,
       lastName : parsed.lastName,
       email    : parsed.email,

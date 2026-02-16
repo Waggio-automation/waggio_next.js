@@ -76,7 +76,6 @@ export default async function EmployeeDetailPage({
       </section>
 
       <PaymentStatusCard
-        employeeId={employee.id.toString()}
         initialStatus={toUiPayoutStatus(employee.payoutSetupStatus)}
       />
     </main>

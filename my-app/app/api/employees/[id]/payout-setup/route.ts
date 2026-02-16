@@ -9,6 +9,7 @@ import {
   deriveEmployeeStatusFromAccount,
   toPrismaEmployeePayoutStatus,
 } from "@/lib/payments/status-mapping";
+import { getPrimaryCompany } from "@/lib/company";
 
 function parseEmployeeId(id: string) {
   try {
@@ -38,6 +39,7 @@ export async function POST(
       payoutSetupStatus: true,
       payoutEnabled: true,
       addrCountry: true,
+      companyId: true,
     },
   });
 
@@ -47,12 +49,32 @@ export async function POST(
 
   try {
     let stripeAccountId = employee.stripeAccountId;
+    let companyId = employee.companyId;
+
+    if (!companyId) {
+      const company = await getPrimaryCompany();
+      if (!company) {
+        return NextResponse.json(
+          { error: "Company settings must be configured before onboarding employees." },
+          { status: 400 }
+        );
+      }
+      companyId = company.id;
+
+      await prisma.employee.update({
+        where: { id: employee.id },
+        data: {
+          companyId,
+        },
+      });
+    }
 
     if (!stripeAccountId) {
       const account = await createConnectedAccount({
         employeeId: employee.id.toString(),
         email: employee.email,
         country: employee.addrCountry || "CA",
+        companyId: companyId.toString(),
       });
       stripeAccountId = account.id;
 

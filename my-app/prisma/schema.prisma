@@ -57,6 +57,8 @@ enum PayrollFailureType {
 
 model Employee {
   id                BigInt        @id @default(autoincrement())
+  companyId         BigInt?
+  company           Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
   firstName         String
   lastName          String
   email             String
@@ -91,6 +93,7 @@ model Employee {
 
   payHistory        PayHistory[]
 
+  @@index([companyId])
   @@index([email, hireDate])
 }
 
@@ -139,4 +142,32 @@ model PayrollRun {
   payHistory    PayHistory[]
 
   @@index([payDate, status])
+}
+
+model Company {
+  id                  BigInt        @id @default(autoincrement())
+  name                String?
+  adminEmail          String
+  adminTokenHash      String?
+  adminTokenCreatedAt DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  settings            CompanySettings?
+  employees           Employee[]
+}
+
+model CompanySettings {
+  id                BigInt            @id @default(autoincrement())
+  companyId         BigInt?
+  company           Company?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  stripeAccountId   String?           @unique
+  stripeCustomerId  String?
+  fundingPaymentMethodId String?
+  payoutEnabled     Boolean           @default(false)
+  payoutSetupStatus PayoutSetupStatus @default(REQUIRED)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([companyId])
 }
