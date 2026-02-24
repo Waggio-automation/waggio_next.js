@@ -8,7 +8,7 @@ export default async function CompanyPayrollReturnPage() {
   const settings = await getOrCreateCompanySettings(company.id);
 
   if (!settings.stripeAccountId) {
-    redirect("/company-settings/payroll?setup=missing_account");
+    redirect("/company-settings?setup=missing_account");
   }
 
   try {
@@ -20,8 +20,8 @@ export default async function CompanyPayrollReturnPage() {
       account: account as unknown as Record<string, unknown>,
     });
   } catch {
-    redirect("/company-settings/payroll?setup=sync_error");
+    redirect("/company-settings?setup=sync_error");
   }
 
-  redirect("/company-settings/payroll?setup=done");
+  redirect("/company-settings?setup=done");
 }

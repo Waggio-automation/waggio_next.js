@@ -81,7 +81,7 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm text-red-700">Employee payout failed</p>
                   <Link
-                    href="/company-settings/payroll"
+                    href="/company-settings"
                     className="rounded border px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
                   >
                     Review company bank account

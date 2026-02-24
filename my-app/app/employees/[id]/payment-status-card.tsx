@@ -28,10 +28,10 @@ export default function PaymentStatusCard({
       </div>
 
       <Link
-        href="/company-settings/payroll"
+        href="/company-settings"
         className="inline-flex items-center text-sm text-indigo-600 hover:text-indigo-500"
       >
-        Go to Payroll Settings →
+        Go to Company Settings -&gt;
       </Link>
     </section>
   );
