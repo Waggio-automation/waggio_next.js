@@ -24,7 +24,7 @@ export default function PaymentStatusCard({
       )}
 
       <div className="rounded border border-dashed p-3 text-sm text-gray-600">
-        Company bank accounts are managed in Company Settings.
+        Company bank accounts are managed in Company Settings → Payroll Settings.
       </div>
 
       <Link
