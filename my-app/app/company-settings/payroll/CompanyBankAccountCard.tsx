@@ -52,7 +52,7 @@ export default function CompanyBankAccountCard({
             disabled={loading}
             className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
           >
-            {loading ? "Starting..." : "Connect bank account"}
+            {loading ? "Starting..." : "Connect your bank account with Stripe"}
           </button>
           <p className="text-xs text-gray-500">
             Connect the business owner&apos;s bank account once to fund payroll runs.

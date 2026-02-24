@@ -1,8 +1,11 @@
 // app/page.tsx
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { requireStripeVerifiedCompanyOrRedirect } from "@/lib/company-onboarding";
 
 export default async function HomePage() {
+  await requireStripeVerifiedCompanyOrRedirect();
+
   // DB summary
   const [employeeCount, recentEmployees] = await Promise.all([
     prisma.employee.count(),
@@ -28,7 +31,7 @@ export default async function HomePage() {
         <nav className="flex gap-3">
           <Link href="/employees" className="underline">Employees</Link>
           <Link href="/payroll" className="underline">Create Paystub</Link>
-          <Link href="/company-settings/payroll" className="underline">Company Settings</Link>
+          <Link href="/company-settings" className="underline">Company Settings</Link>
         </nav>
       </header>
 
