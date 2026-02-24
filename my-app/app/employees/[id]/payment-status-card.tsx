@@ -24,14 +24,14 @@ export default function PaymentStatusCard({
       )}
 
       <div className="rounded border border-dashed p-3 text-sm text-gray-600">
-        Company bank accounts are managed in Company Settings -> Payroll Settings.
+        Company bank accounts are managed in Company Settings → Payroll Settings.
       </div>
 
       <Link
         href="/company-settings/payroll"
         className="inline-flex items-center text-sm text-indigo-600 hover:text-indigo-500"
       >
-        Go to Payroll Settings ->
+        Go to Payroll Settings →
       </Link>
     </section>
   );
