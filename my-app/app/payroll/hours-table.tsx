@@ -229,22 +229,19 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
 
       if (!items.length) throw new Error("No employees selected to run payroll.");
 
-      const res = await fetch("/api/payroll/update-status", {
+      const res = await fetch("/api/payroll/run", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Idempotency-Key": crypto.randomUUID(),
         },
         body: JSON.stringify({
-          schedule: {
-            employeeIds: items.map((i) => i.employeeId),
-            payDate,
-            periodStart: period.start,
-            periodEnd: period.end,
-            sendAt: sendOn,
-            timezone: "America/Toronto",
-          },
-          status: "PENDING",
+          items,
+          payDate,
+          periodStart: period.start,
+          periodEnd: period.end,
+          sendAt: sendOn,
+          timezone: "America/Toronto",
         }),
       });
 

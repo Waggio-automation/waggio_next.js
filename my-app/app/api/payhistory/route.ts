@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { calculatePayrollAmounts } from "@/lib/payroll/calculatePayroll";
 import { z } from "zod";
 
 const itemSchema = z.object({
   employeeId: z.string().min(1),       // stringified BIGINT
   hoursWorked: z.number().nullable(),  // null for SALARY
   overtime: z.number().default(0),
+  holidayHours: z.number().default(0),
   includeVacation: z.boolean().default(true),
 });
 
@@ -15,6 +17,35 @@ const payloadSchema = z.object({
   payDate: z.string().min(1),
   items: z.array(itemSchema).min(1),
 });
+
+function serializeBigInt<T>(value: T): T {
+  return JSON.parse(
+    JSON.stringify(value, (_, currentValue) =>
+      typeof currentValue === "bigint" ? currentValue.toString() : currentValue
+    )
+  ) as T;
+}
+
+export async function GET(req: NextRequest) {
+  const payrollRunId = req.nextUrl.searchParams.get("payrollRunId");
+  if (!payrollRunId) {
+    return NextResponse.json({ error: "Missing payrollRunId query parameter" }, { status: 400 });
+  }
+
+  let payrollRunIdBigInt: bigint;
+  try {
+    payrollRunIdBigInt = BigInt(payrollRunId);
+  } catch {
+    return NextResponse.json({ error: "Invalid payrollRunId" }, { status: 400 });
+  }
+
+  const data = await prisma.payHistory.findMany({
+    where: { payrollRunId: payrollRunIdBigInt },
+    include: { employee: true },
+  });
+
+  return NextResponse.json(serializeBigInt(data));
+}
 
 export async function POST(req: NextRequest) {
   const idem = req.headers.get("Idempotency-Key") || undefined;
@@ -40,43 +71,30 @@ export async function POST(req: NextRequest) {
       });
       if (!emp) throw new Error(`Unknown employee: ${it.employeeId}`);
 
-      // 금액 계산(서버 확정)
-      let base = 0;
-      if (emp.payType === "HOURLY") {
-        const rate = Number(emp.hourlyRate ?? 0);
-        const h = Number(it.hoursWorked ?? 0);
-        const ot = Number(it.overtime ?? 0);
-        base = rate * h + rate * 1.5 * ot;
-      } else {
-        const sal = Number(emp.salary ?? 0);
-        base = sal / (emp.payGroup === "BI_WEEKLY" ? 26 : 12);
-      }
-
-      const vacPct = Number(emp.vacationPay ?? 0) / 100;
-      const vacationAmt = it.includeVacation ? base * vacPct : 0;
-      const gross = base + vacationAmt;
-
-      // 공제는 이후 실제 규칙으로 확장. 지금은 0으로 저장
-      const ded_cpp = 0;
-      const ded_ei = 0;
-      const ded_tax = 0;
-      const ded_eht = 0;
-      const ded_wsib = 0;
-
-      const net = gross - ded_cpp - ded_ei - ded_tax - ded_eht - ded_wsib;
+      const amounts = calculatePayrollAmounts({
+        payType: emp.payType,
+        payGroup: emp.payGroup,
+        hourlyRate: Number(emp.hourlyRate ?? 0),
+        salary: Number(emp.salary ?? 0),
+        vacationPay: Number(emp.vacationPay ?? 0),
+        hoursWorked: it.hoursWorked,
+        overtime: it.overtime,
+        holidayHours: it.holidayHours,
+        includeVacation: it.includeVacation,
+      });
 
       await tx.payHistory.create({
         data: {
           employeeId: emp.id,
           payDate: new Date(payDate),
           hoursWorked: emp.payType === "HOURLY" ? Number(it.hoursWorked ?? 0) : null,
-          grossPay: gross,
-          ded_cpp: ded_cpp,
-          ded_ei: ded_ei,
-          ded_income_tax: ded_tax,
-          ded_eht: ded_eht,
-          ded_wsib: ded_wsib,
-          netPay: net,
+          grossPay: amounts.grossPay,
+          ded_cpp: amounts.ded_cpp,
+          ded_ei: amounts.ded_ei,
+          ded_income_tax: amounts.ded_tax,
+          ded_eht: amounts.ded_eht,
+          ded_wsib: amounts.ded_wsib,
+          netPay: amounts.netPay,
           status: "PENDING",                    // 기본 상태
           review_valid: true,
           review_errors: [],
@@ -93,7 +111,7 @@ export async function POST(req: NextRequest) {
 
 const statusPatchSchema = z.object({
     ids: z.array(z.union([z.string(), z.number()])).min(1), // PayHistory.id (BIGSERIAL)
-    status: z.enum(["PENDING", "PROCESSED", "PAID"]),
+    status: z.enum(["PENDING", "PROCESSED", "SENT"]),
   });
   
   export async function PATCH(req: NextRequest) {
