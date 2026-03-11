@@ -43,6 +43,7 @@ enum PayoutSetupStatus {
 
 enum PayrollRunStatus {
   SCHEDULED
+  PROCESSED
   FUNDING
   FUNDS_CONFIRMED
   PAYING
