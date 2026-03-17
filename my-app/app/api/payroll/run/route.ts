@@ -42,11 +42,11 @@ export async function POST(req: Request) {
       const createdRun = await tx.payrollRun.create({
         data: {
           payDate: new Date(payDate),
+          sendAt: new Date(sendAt),
           status: "SCHEDULED" ,
           meta: {
             periodStart,
             periodEnd,
-            sendAt,
             timezone,
           } as Prisma.InputJsonValue,
         },

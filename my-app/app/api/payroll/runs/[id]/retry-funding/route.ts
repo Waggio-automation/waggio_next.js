@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 
 type ScheduleMeta = {
   employeeIds: string[];
-  payDate: string;
+  payDate?: string;
   periodStart?: string | null;
   periodEnd?: string | null;
   sendAt?: string | null;
@@ -51,6 +51,7 @@ export async function POST(
       id: true,
       meta: true,
       payDate: true,
+      sendAt: true,
     },
   });
 
@@ -59,7 +60,7 @@ export async function POST(
   }
 
   const schedule = run.meta as ScheduleMeta | null;
-  if (!schedule || !Array.isArray(schedule.employeeIds) || !schedule.payDate) {
+  if (!schedule || !Array.isArray(schedule.employeeIds)) {
     return NextResponse.json(
       { error: "Payroll run cannot be retried because schedule metadata is missing." },
       { status: 400 }
@@ -72,11 +73,13 @@ export async function POST(
   }
 
   const tz = schedule.timezone ?? "America/Toronto";
-  const sendAtIso = !schedule.sendAt
-    ? toIsoAtLocalTime(schedule.payDate, "09:00", tz)
-    : /^\d{4}-\d{2}-\d{2}$/.test(String(schedule.sendAt))
-      ? toIsoAtLocalTime(String(schedule.sendAt), "09:00", tz)
-      : new Date(String(schedule.sendAt)).toISOString();
+  const payDateYmd = run.payDate.toISOString().slice(0, 10);
+  const sendAtSource = run.sendAt?.toISOString() ?? schedule.sendAt ?? null;
+  const sendAtIso = !sendAtSource
+    ? toIsoAtLocalTime(payDateYmd, "09:00", tz)
+    : /^\d{4}-\d{2}-\d{2}$/.test(String(sendAtSource))
+      ? toIsoAtLocalTime(String(sendAtSource), "09:00", tz)
+      : new Date(String(sendAtSource)).toISOString();
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (process.env.N8N_API_KEY) {
