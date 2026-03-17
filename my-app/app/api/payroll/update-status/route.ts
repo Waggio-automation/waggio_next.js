@@ -74,11 +74,13 @@ export async function POST(req: Request) {
         : undefined);
 
     if (schedule) {
+      const { sendAt: _sendAt, ...scheduleMeta } = schedule;
       const payrollRun = await prisma.payrollRun.create({
         data: {
           payDate: new Date(schedule.payDate),
+          sendAt: schedule.sendAt ? new Date(schedule.sendAt) : null,
           status: "SCHEDULED",
-          meta: schedule as Prisma.InputJsonValue,
+          meta: scheduleMeta as Prisma.InputJsonValue,
         },
       });
 

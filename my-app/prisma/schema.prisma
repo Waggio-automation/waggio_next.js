@@ -28,9 +28,12 @@ enum PaymentMethod {
   DIRECT_DEPOSIT
 }
 
-enum PayStatus {
+enum PayHistoryStatus {
   PENDING
+  PROCESSING
   PROCESSED
+  READY
+  SENDING
   SENT
 }
 
@@ -113,10 +116,14 @@ model PayHistory {
   ded_eht         Decimal       @default(0)
   ded_wsib        Decimal       @default(0)
   netPay          Decimal
-  status          PayStatus     @default(PENDING)
+  status          PayHistoryStatus @default(PENDING)
   paidAt          DateTime?
   paymentProvider String?
   paymentRef      String?
+  pdfUrl          String?
+  emailSentAt     DateTime?
+  emailProvider   String?
+  deliveryStatus  String?
   failureReason   String?
   attemptCount    Int           @default(0)
   lastAttemptAt   DateTime?
@@ -132,6 +139,7 @@ model PayHistory {
 model PayrollRun {
   id            BigInt            @id @default(autoincrement())
   payDate       DateTime
+  sendAt        DateTime?
   status        PayrollRunStatus  @default(SCHEDULED)
   failureType   PayrollFailureType?
   failureReason String?
@@ -143,6 +151,7 @@ model PayrollRun {
   payHistory    PayHistory[]
 
   @@index([payDate, status])
+  @@index([sendAt])
 }
 
 model Company {

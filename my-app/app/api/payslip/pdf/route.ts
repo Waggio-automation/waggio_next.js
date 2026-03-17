@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import puppeteer from "puppeteer";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 
 export const runtime = "nodejs";
 
 type PdfRequestBody = {
   html?: unknown;
+  payHistoryId?: unknown;
 };
 
 export async function POST(req: Request) {
@@ -13,9 +16,17 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as PdfRequestBody;
     const html = typeof body?.html === "string" ? body.html : "";
+    const payHistoryId =
+      typeof body?.payHistoryId === "number" && Number.isFinite(body.payHistoryId)
+        ? Math.trunc(body.payHistoryId)
+        : null;
 
     if (!html.trim()) {
       return NextResponse.json({ error: "Missing or invalid html" }, { status: 400 });
+    }
+
+    if (payHistoryId == null) {
+      return NextResponse.json({ error: "Missing or invalid payHistoryId" }, { status: 400 });
     }
 
     browser = await puppeteer.launch({ headless: true });
@@ -27,13 +38,14 @@ export async function POST(req: Request) {
       printBackground: true,
     });
 
-    return new Response(pdfBuffer, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": 'inline; filename="payslip.pdf"',
-      },
-    });
+    const fileName = `payslip_${payHistoryId}.pdf`;
+    const payslipsDir = path.join(process.cwd(), "public", "payslips");
+    const filePath = path.join(payslipsDir, fileName);
+
+    await mkdir(payslipsDir, { recursive: true });
+    await writeFile(filePath, pdfBuffer);
+
+    return NextResponse.json({ pdfUrl: `/payslips/${fileName}` });
   } catch (error: unknown) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to generate PDF" },

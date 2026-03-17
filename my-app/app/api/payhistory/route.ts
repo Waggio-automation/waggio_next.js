@@ -110,27 +110,39 @@ export async function POST(req: NextRequest) {
 }
 
 const statusPatchSchema = z.object({
-    ids: z.array(z.union([z.string(), z.number()])).min(1), // PayHistory.id (BIGSERIAL)
-    status: z.enum(["PENDING", "PROCESSED", "SENT"]),
-  });
-  
-  export async function PATCH(req: NextRequest) {
-    const json = await req.json();
-    const parsed = statusPatchSchema.safeParse(json);
-    if (!parsed.success) {
-      return NextResponse.json({ error: "Validation failed", issues: parsed.error.issues }, { status: 400 });
-    }
-  
-    const { ids, status } = parsed.data;
-  
-    // BIGINT 배열로 변환
-    const idList = ids.map((v) => (typeof v === "string" ? BigInt(v) : BigInt(v)));
-  
-    const updated = await prisma.payHistory.updateMany({
-      where: { id: { in: idList } },
-      data: { status },
-    });
-  
-    return NextResponse.json({ ok: true, updated: updated.count });
+  ids: z.array(z.union([z.string(), z.number()])).min(1), // PayHistory.id (BIGSERIAL)
+  status: z.enum(["PENDING", "PROCESSED", "READY", "SENDING" ,"SENT"]),
+  pdfUrl: z.string().optional(),
+});
+
+export async function PATCH(req: NextRequest) {
+  const json = await req.json();
+  const parsed = statusPatchSchema.safeParse(json);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Validation failed", issues: parsed.error.issues }, { status: 400 });
   }
+
+  const { ids, status, pdfUrl } = parsed.data;
+
+  const idList: bigint[] = [];
+  for (const value of ids) {
+    try {
+      idList.push(BigInt(value));
+    } catch {
+      return NextResponse.json({ error: `Invalid PayHistory id: ${String(value)}` }, { status: 400 });
+    }
+  }
+
+  const updateData = {
+    status,
+    ...(pdfUrl !== undefined ? { pdfUrl } : {}),
+  };
+
+  const updated = await prisma.payHistory.updateMany({
+    where: { id: { in: idList } },
+    data: updateData,
+  });
+
+  return NextResponse.json({ ok: true, updated: updated.count });
+}
   
