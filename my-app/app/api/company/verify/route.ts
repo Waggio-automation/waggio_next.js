@@ -25,8 +25,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Invalid, used, or expired token." }, { status: 401 });
   }
 
-  // Verification is completed server-side before redirecting into Stripe onboarding.
-  const redirectUrl = new URL("/api/company/payroll/setup", req.nextUrl.origin);
+  const redirectUrl = new URL("/company-settings?setup=verified", req.nextUrl.origin);
   const res = NextResponse.redirect(redirectUrl);
   res.cookies.set(getTokenCookieName(), createAdminSessionCookieValue(company.id), {
     httpOnly: true,

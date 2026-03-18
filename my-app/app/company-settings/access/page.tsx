@@ -16,7 +16,7 @@ export default function CompanyAccessPage() {
           <p className="text-sm text-gray-500">Company Settings</p>
           <h1 className="text-2xl font-semibold">Admin access</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Enter the admin email to receive a magic link for onboarding.
+            Enter the admin email to receive a magic link for Trolley payout setup.
           </p>
         </div>
       </header>

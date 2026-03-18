@@ -7,7 +7,7 @@ import { PAYROLL_STATUS_LABELS } from "@/lib/payments/payroll-status";
 type RunRow = {
   id: string;
   payday: string;
-  status: "scheduled" | "funding" | "funds_confirmed" | "paying" | "paid" | "failed";
+  status: "scheduled" | "processed" | "funding" | "funds_confirmed" | "paying" | "paid" | "failed";
   failureType: "funding" | "employee" | null;
   failureReason: string | null;
   employeeIssueId?: string | null;
@@ -15,6 +15,7 @@ type RunRow = {
 
 export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
   const [retrying, setRetrying] = useState<string | null>(null);
+  const [dispatchingDueRuns, setDispatchingDueRuns] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   async function retryFunding(runId: string) {
@@ -39,13 +40,53 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
     }
   }
 
+  async function sendDuePayrollRuns() {
+    try {
+      setMessage(null);
+      setDispatchingDueRuns(true);
+
+      const res = await fetch("/api/payroll/send-due", {
+        method: "POST",
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to send due payroll runs.");
+      }
+
+      setMessage(
+        data?.count > 0
+          ? `Started payout processing for ${data.count} due payroll run${data.count === 1 ? "" : "s"}.`
+          : "No due payroll runs were ready to send."
+      );
+    } catch (error: unknown) {
+      setMessage(
+        error instanceof Error ? error.message : "Failed to send due payroll runs."
+      );
+    } finally {
+      setDispatchingDueRuns(false);
+    }
+  }
+
   return (
     <section className="rounded-xl border bg-white">
       <div className="border-b p-4">
-        <h2 className="text-lg font-semibold">Payroll status</h2>
-        <p className="mt-1 text-sm text-gray-600">
-          Scheduled -&gt; Funding payroll -&gt; Paying employees -&gt; Paid ✅
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Payroll status</h2>
+            <p className="mt-1 text-sm text-gray-600">
+              Processed run + sendAt reached -&gt; Trolley batch -&gt; Paying employees -&gt; Paid
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={sendDuePayrollRuns}
+            disabled={dispatchingDueRuns}
+            className="rounded border px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+          >
+            {dispatchingDueRuns ? "Sending due runs..." : "Send due payroll"}
+          </button>
+        </div>
       </div>
 
       <div className="p-4 space-y-3">
@@ -65,14 +106,14 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
 
               {run.status === "failed" && run.failureType === "funding" ? (
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm text-red-700">Payroll funding failed</p>
+                  <p className="text-sm text-red-700">Payroll payout failed</p>
                   <button
                     type="button"
                     onClick={() => retryFunding(run.id)}
                     disabled={retrying === run.id}
                     className="rounded border px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-60"
                   >
-                    {retrying === run.id ? "Retrying..." : "Retry funding"}
+                    {retrying === run.id ? "Retrying..." : "Retry payout"}
                   </button>
                 </div>
               ) : null}

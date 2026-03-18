@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { retrieveConnectedAccount } from "@/lib/payments/stripe";
+import { getRecipient } from "@/lib/trolley";
 import {
-  deriveEmployeeStatusFromAccount,
+  deriveEmployeeStatusFromTrolleyRecipient,
   toPrismaEmployeePayoutStatus,
 } from "@/lib/payments/status-mapping";
 
@@ -44,7 +44,9 @@ export async function GET(
     where: { id: employeeId },
     select: {
       id: true,
-      stripeAccountId: true,
+      trolleyRecipientId: true,
+      trolleyRecipientAccountId: true,
+      trolleyRecipientAccountType: true,
       payoutEnabled: true,
       payoutSetupStatus: true,
     },
@@ -54,17 +56,22 @@ export async function GET(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
-  if (!employee.stripeAccountId) {
+  if (!employee.trolleyRecipientId) {
     return NextResponse.json({
       employeeId: employee.id.toString(),
       payoutSetupStatus: "required",
       payoutEnabled: false,
+      payoutMethod: null,
     });
   }
 
   try {
-    const account = await retrieveConnectedAccount(employee.stripeAccountId);
-    const derived = deriveEmployeeStatusFromAccount(account as unknown as Record<string, unknown>);
+    await getRecipient(employee.trolleyRecipientId);
+
+    const derived = deriveEmployeeStatusFromTrolleyRecipient({
+      recipientId: employee.trolleyRecipientId,
+      recipientAccountId: employee.trolleyRecipientAccountId,
+    });
 
     const updated = await prisma.employee.update({
       where: { id: employee.id },
@@ -76,6 +83,7 @@ export async function GET(
         id: true,
         payoutSetupStatus: true,
         payoutEnabled: true,
+        trolleyRecipientAccountType: true,
       },
     });
 
@@ -83,12 +91,22 @@ export async function GET(
       employeeId: updated.id.toString(),
       payoutSetupStatus: toUiStatus(updated.payoutSetupStatus),
       payoutEnabled: updated.payoutEnabled,
+      payoutMethod: updated.trolleyRecipientAccountType,
     });
   } catch {
+    await prisma.employee.update({
+      where: { id: employee.id },
+      data: {
+        payoutSetupStatus: "ISSUE",
+        payoutEnabled: false,
+      },
+    });
+
     return NextResponse.json({
       employeeId: employee.id.toString(),
-      payoutSetupStatus: toUiStatus(employee.payoutSetupStatus),
-      payoutEnabled: employee.payoutEnabled,
+      payoutSetupStatus: "issue",
+      payoutEnabled: false,
+      payoutMethod: employee.trolleyRecipientAccountType,
     });
   }
 }
