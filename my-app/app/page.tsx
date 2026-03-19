@@ -1,10 +1,10 @@
 // app/page.tsx
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { requireStripeVerifiedCompanyOrRedirect } from "@/lib/company-onboarding";
+import { requireTrolleyReadyCompanyOrRedirect } from "@/lib/company-onboarding";
 
 export default async function HomePage() {
-  await requireStripeVerifiedCompanyOrRedirect();
+  await requireTrolleyReadyCompanyOrRedirect();
 
   // DB summary
   const [employeeCount, recentEmployees] = await Promise.all([

@@ -1,5 +1,6 @@
 export type PayrollStatusUi =
   | "scheduled"
+  | "processed"
   | "funding"
   | "funds_confirmed"
   | "paying"
@@ -8,6 +9,7 @@ export type PayrollStatusUi =
 
 export const PAYROLL_STATUS_LABELS: Record<PayrollStatusUi, string> = {
   scheduled: "Scheduled",
+  processed: "Processed",
   funding: "Funding payroll",
   funds_confirmed: "Funding confirmed",
   paying: "Paying employees",
@@ -19,6 +21,8 @@ export function toPayrollStatusUi(status: string): PayrollStatusUi {
   switch (status) {
     case "SCHEDULED":
       return "scheduled";
+    case "PROCESSED":
+      return "processed";
     case "FUNDING":
       return "funding";
     case "FUNDS_CONFIRMED":

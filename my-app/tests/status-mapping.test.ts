@@ -1,50 +1,59 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  deriveEmployeeStatusFromAccount,
+  deriveCompanyStatusFromConfiguration,
+  deriveEmployeeStatusFromTrolleyRecipient,
   mapExternalPaymentEventToInternal,
 } from "../lib/payments/status-mapping.ts";
 
-test("deriveEmployeeStatusFromAccount returns ready when account is fully enabled", () => {
-  const result = deriveEmployeeStatusFromAccount({
-    charges_enabled: true,
-    payouts_enabled: true,
-    requirements: { currently_due: [] },
+test("deriveEmployeeStatusFromTrolleyRecipient returns ready when recipient and account exist", () => {
+  const result = deriveEmployeeStatusFromTrolleyRecipient({
+    recipientId: "rp_123",
+    recipientAccountId: "ra_123",
   });
 
   assert.equal(result.payoutSetupStatus, "ready");
   assert.equal(result.payoutEnabled, true);
 });
 
-test("deriveEmployeeStatusFromAccount returns issue when requirements are due", () => {
-  const result = deriveEmployeeStatusFromAccount({
-    charges_enabled: false,
-    payouts_enabled: false,
-    requirements: { currently_due: ["external_account"] },
+test("deriveEmployeeStatusFromTrolleyRecipient returns pending when account is missing", () => {
+  const result = deriveEmployeeStatusFromTrolleyRecipient({
+    recipientId: "rp_123",
   });
 
-  assert.equal(result.payoutSetupStatus, "issue");
+  assert.equal(result.payoutSetupStatus, "pending");
   assert.equal(result.payoutEnabled, false);
 });
 
-test("mapExternalPaymentEventToInternal maps funding failures", () => {
+test("deriveCompanyStatusFromConfiguration returns ready when environment and defaults exist", () => {
+  const result = deriveCompanyStatusFromConfiguration({
+    environmentConfigured: true,
+    defaultPayoutCurrency: "CAD",
+    defaultPayoutCountry: "CA",
+  });
+
+  assert.equal(result.payoutSetupStatus, "ready");
+  assert.equal(result.payoutEnabled, true);
+});
+
+test("mapExternalPaymentEventToInternal maps payment failures", () => {
   const mapped = mapExternalPaymentEventToInternal({
-    type: "payment_intent.payment_failed",
+    type: "payment.failed",
     data: {
       object: {
-        failure_message: "insufficient_funds",
+        message: "recipient account rejected",
       },
     },
   });
 
   assert.equal(mapped.payrollRun?.status, "failed");
-  assert.equal(mapped.payrollRun?.failureType, "funding");
-  assert.equal(mapped.payrollRun?.failureReason, "insufficient_funds");
+  assert.equal(mapped.payrollRun?.failureType, "employee");
+  assert.equal(mapped.payrollRun?.failureReason, "recipient account rejected");
 });
 
-test("mapExternalPaymentEventToInternal maps payout paid to paid status", () => {
+test("mapExternalPaymentEventToInternal maps payment paid to paid status", () => {
   const mapped = mapExternalPaymentEventToInternal({
-    type: "payout.paid",
+    type: "payment.paid",
   });
 
   assert.equal(mapped.payrollRun?.status, "paid");

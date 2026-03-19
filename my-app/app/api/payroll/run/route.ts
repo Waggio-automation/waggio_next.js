@@ -45,9 +45,11 @@ export async function POST(req: Request) {
           sendAt: new Date(sendAt),
           status: "SCHEDULED" ,
           meta: {
+            employeeIds: items.map((item) => item.employeeId),
             periodStart,
             periodEnd,
             timezone,
+            sendAt,
           } as Prisma.InputJsonValue,
         },
       });

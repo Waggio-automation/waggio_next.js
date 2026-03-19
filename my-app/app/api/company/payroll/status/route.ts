@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { getCompanyFromCookie } from "@/lib/company-auth";
-import { getOrCreateCompanySettings } from "@/lib/company-settings";
+import {
+  getOrCreateCompanySettings,
+  INTERNAL_BATCH_PREFIX,
+  INTERNAL_PAYOUT_COUNTRY,
+  INTERNAL_PAYOUT_CURRENCY,
+  isTrolleyEnvironmentConfigured,
+  syncCompanySettingsFromConfiguration,
+} from "@/lib/company-settings";
 
 function toUiStatus(status: string | null | undefined) {
   switch (status) {
@@ -23,10 +30,15 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  await syncCompanySettingsFromConfiguration(company.id);
   const settings = await getOrCreateCompanySettings(company.id);
 
   return NextResponse.json({
     payoutSetupStatus: toUiStatus(settings.payoutSetupStatus),
     payoutEnabled: settings.payoutEnabled,
+    defaultPayoutCurrency: INTERNAL_PAYOUT_CURRENCY,
+    defaultPayoutCountry: INTERNAL_PAYOUT_COUNTRY,
+    trolleyBatchPrefix: INTERNAL_BATCH_PREFIX,
+    hasEnvironmentConfig: isTrolleyEnvironmentConfigured(),
   });
 }

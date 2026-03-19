@@ -44,6 +44,7 @@ export default async function EmployeeDetailPage({
       payGroup: true,
       payoutSetupStatus: true,
       payoutEnabled: true,
+      trolleyRecipientAccountType: true,
       createdAt: true,
     },
   });
@@ -76,7 +77,11 @@ export default async function EmployeeDetailPage({
       </section>
 
       <PaymentStatusCard
+        employeeId={employee.id.toString()}
         initialStatus={toUiPayoutStatus(employee.payoutSetupStatus)}
+        initialMethod={
+          employee.trolleyRecipientAccountType === "paypal" ? "paypal" : "bank-transfer"
+        }
       />
     </main>
   );
