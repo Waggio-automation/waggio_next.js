@@ -59,6 +59,54 @@ enum PayrollFailureType {
   EMPLOYEE
 }
 
+enum RemitterType {
+  MONTHLY
+  QUARTERLY
+  ACCELERATED_THRESHOLD_1
+  ACCELERATED_THRESHOLD_2
+}
+
+enum RemittanceStatus {
+  DUE
+  PAID
+  OVERDUE
+}
+
+enum RemittancePaymentStatus {
+  RECORDED
+  VOIDED
+}
+
+enum T4GenerationStatus {
+  NOT_GENERATED
+  GENERATED
+  FINALIZED
+}
+
+enum ReminderState {
+  UPCOMING
+  DUE_TODAY
+  OVERDUE
+  PAID_NO_REMINDER
+}
+
+enum DocumentType {
+  REMITTANCE_REPORT
+  REMITTANCE_PAYMENT_PROOF
+  T4_SLIP
+  T4_SUMMARY
+  OWNER_UPLOADED_RECEIPT
+  OTHER
+}
+
+enum LinkedEntityType {
+  REMITTANCE
+  REMITTANCE_PAYMENT
+  T4_SLIP
+  T4_SUMMARY
+  COMPANY
+}
+
 model Employee {
   id                BigInt        @id @default(autoincrement())
   companyId         BigInt?
@@ -98,6 +146,7 @@ model Employee {
   updatedAt         DateTime      @updatedAt
 
   payHistory        PayHistory[]
+  t4Slips           T4Slip[]
 
   @@index([companyId])
   @@index([email, hireDate])
@@ -133,6 +182,7 @@ model PayHistory {
   review_errors   String[]      @default([])
   review_warnings String[]      @default([])
   createdAt       DateTime      @default(now())
+  remittanceAllocations RemittancePayHistory[]
 
   @@index([employeeId, payDate])
   @@index([payrollRunId])
@@ -166,7 +216,14 @@ model Company {
   updatedAt           DateTime      @updatedAt
 
   settings            CompanySettings?
+  payrollSettings     CompanyPayrollSettings?
   employees           Employee[]
+  remittances         Remittance[]
+  t4Slips             T4Slip[]
+  t4Summaries         T4Summary[]
+  reminderEvents      ReminderEvent[]
+  documents           Document[]
+  auditLogs           AuditLog[]
 }
 
 model CompanySettings {
@@ -182,4 +239,185 @@ model CompanySettings {
   updatedAt         DateTime          @updatedAt
 
   @@index([companyId])
+}
+
+model CompanyPayrollSettings {
+  id                        BigInt       @id @default(autoincrement())
+  companyId                 BigInt       @unique
+  company                   Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  legalName                 String?
+  businessNumber            String?
+  payrollProgramAccount     String?
+  remitterType              RemitterType @default(MONTHLY)
+  contactEmail              String?
+  preDueReminderDays        Int          @default(7)
+  postDueReminderFrequencyDays Int       @default(7)
+  firstRemittancePeriodStart DateTime?
+  createdAt                 DateTime     @default(now())
+  updatedAt                 DateTime     @updatedAt
+}
+
+model Remittance {
+  id                   BigInt            @id @default(autoincrement())
+  companyId            BigInt
+  company              Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  periodStart          DateTime
+  periodEnd            DateTime
+  remitterTypeSnapshot RemitterType
+  status               RemittanceStatus  @default(DUE)
+  dueDate              DateTime
+  employeeCount        Int               @default(0)
+  totalIncomeTax       Decimal           @default(0)
+  totalCppEmployee     Decimal           @default(0)
+  totalCppEmployer     Decimal           @default(0)
+  totalEiEmployee      Decimal           @default(0)
+  totalEiEmployer      Decimal           @default(0)
+  totalPayable         Decimal           @default(0)
+  paidAt               DateTime?
+  notes                String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  payments             RemittancePayment[]
+  allocations          RemittancePayHistory[]
+  documents            Document[]
+  reminders            ReminderEvent[]
+
+  @@unique([companyId, periodStart, periodEnd])
+  @@index([companyId, dueDate, status])
+}
+
+model RemittancePayHistory {
+  remittanceId BigInt
+  payHistoryId BigInt @unique
+  createdAt    DateTime   @default(now())
+
+  remittance   Remittance @relation(fields: [remittanceId], references: [id], onDelete: Cascade)
+  payHistory   PayHistory @relation(fields: [payHistoryId], references: [id], onDelete: Cascade)
+
+  @@id([remittanceId, payHistoryId])
+  @@index([payHistoryId])
+}
+
+model RemittancePayment {
+  id              BigInt                   @id @default(autoincrement())
+  remittanceId     BigInt
+  remittance       Remittance              @relation(fields: [remittanceId], references: [id], onDelete: Cascade)
+  paymentDate      DateTime
+  amountPaid       Decimal
+  paymentMethod    String?
+  referenceNumber  String?
+  status           RemittancePaymentStatus @default(RECORDED)
+  notes            String?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  documents        Document[]
+
+  @@index([remittanceId, paymentDate])
+}
+
+model T4Slip {
+  id                       BigInt             @id @default(autoincrement())
+  companyId                BigInt
+  company                  Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeeId               BigInt
+  employee                 Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  taxYear                  Int
+  status                   T4GenerationStatus @default(NOT_GENERATED)
+  employmentIncome         Decimal            @default(0)
+  incomeTaxDeducted        Decimal            @default(0)
+  cppContributionsEmployee Decimal            @default(0)
+  eiPremiumsEmployee       Decimal            @default(0)
+  otherBoxPayload          Json?
+  generatedAt              DateTime?
+  finalizedAt              DateTime?
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
+
+  summaryId                BigInt?
+  summary                  T4Summary?         @relation(fields: [summaryId], references: [id], onDelete: SetNull)
+  documents                Document[]
+
+  @@unique([companyId, employeeId, taxYear])
+  @@index([companyId, taxYear, status])
+}
+
+model T4Summary {
+  id                       BigInt             @id @default(autoincrement())
+  companyId                BigInt
+  company                  Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  taxYear                  Int
+  status                   T4GenerationStatus @default(NOT_GENERATED)
+  employeeCount            Int                @default(0)
+  totalEmploymentIncome    Decimal            @default(0)
+  totalIncomeTaxDeducted   Decimal            @default(0)
+  totalCppEmployee         Decimal            @default(0)
+  totalEiEmployee          Decimal            @default(0)
+  generatedAt              DateTime?
+  finalizedAt              DateTime?
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
+
+  slips                    T4Slip[]
+  documents                Document[]
+
+  @@unique([companyId, taxYear])
+}
+
+model ReminderEvent {
+  id             BigInt        @id @default(autoincrement())
+  companyId       BigInt
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  remittanceId    BigInt?
+  remittance      Remittance?  @relation(fields: [remittanceId], references: [id], onDelete: Cascade)
+  reminderState   ReminderState
+  scheduledFor    DateTime
+  sentAt          DateTime?
+  channel         String       @default("dashboard")
+  createdAt       DateTime     @default(now())
+
+  @@index([companyId, scheduledFor])
+  @@index([remittanceId, reminderState])
+}
+
+model Document {
+  id               BigInt         @id @default(autoincrement())
+  companyId         BigInt
+  company           Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  documentType      DocumentType
+  fileName          String
+  storagePath       String
+  mimeType          String         @default("application/json")
+  linkedEntityType  LinkedEntityType
+  linkedEntityId    BigInt
+  taxYear           Int?
+  uploadedBy        String?
+  uploadedAt        DateTime       @default(now())
+  remittanceId      BigInt?
+  remittance        Remittance?    @relation(fields: [remittanceId], references: [id], onDelete: Cascade)
+  remittancePaymentId BigInt?
+  remittancePayment RemittancePayment? @relation(fields: [remittancePaymentId], references: [id], onDelete: Cascade)
+  t4SlipId          BigInt?
+  t4Slip            T4Slip?        @relation(fields: [t4SlipId], references: [id], onDelete: Cascade)
+  t4SummaryId       BigInt?
+  t4Summary         T4Summary?     @relation(fields: [t4SummaryId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, documentType, uploadedAt])
+}
+
+model AuditLog {
+  id          BigInt   @id @default(autoincrement())
+  companyId    BigInt
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  actorType    String
+  actorId      String?
+  action       String
+  targetType   String
+  targetId     String
+  metadataJson Json?
+  createdAt    DateTime @default(now())
+
+  @@index([companyId, createdAt])
+  @@index([targetType, targetId])
 }

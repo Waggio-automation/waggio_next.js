@@ -109,6 +109,21 @@ export default async function CompanySettingsPage({
         readyEmployeeCount={readyEmployeeCount}
       />
 
+      <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm flex items-center justify-between gap-4">
+        <div className="space-y-1">
+          <h2 className="text-xl font-semibold text-gray-900">CRA payroll settings</h2>
+          <p className="text-sm text-gray-600">
+            Configure your payroll account number, remitter type, and reminder timing.
+          </p>
+        </div>
+        <Link
+          href="/cra/settings"
+          className="shrink-0 rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+        >
+          Open CRA settings
+        </Link>
+      </section>
+
       <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm space-y-4">
         <div className="space-y-1">
           <h2 className="text-xl font-semibold text-gray-900">Employees needing payout setup</h2>

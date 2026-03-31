@@ -2,12 +2,13 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireTrolleyReadyCompanyOrRedirect } from "@/lib/company-onboarding";
+import { getCraDashboard } from "@/lib/cra";
 
 export default async function HomePage() {
-  await requireTrolleyReadyCompanyOrRedirect();
+  const onboarding = await requireTrolleyReadyCompanyOrRedirect();
 
   // DB summary
-  const [employeeCount, recentEmployees] = await Promise.all([
+  const [employeeCount, recentEmployees, craDashboard] = await Promise.all([
     prisma.employee.count(),
     prisma.employee.findMany({
       orderBy: { createdAt: "desc" },
@@ -22,7 +23,13 @@ export default async function HomePage() {
         hireDate: true,
       },
     }),
+    getCraDashboard(onboarding.company.id),
   ]);
+
+  const formatMoney = new Intl.NumberFormat("en-CA", {
+    style: "currency",
+    currency: "CAD",
+  });
 
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-8">
@@ -31,6 +38,7 @@ export default async function HomePage() {
         <nav className="flex gap-3">
           <Link href="/employees" className="underline">Employees</Link>
           <Link href="/payroll" className="underline">Create Paystub</Link>
+          <Link href="/cra" className="underline">CRA</Link>
           <Link href="/company-settings" className="underline">Company Settings</Link>
         </nav>
       </header>
@@ -53,38 +61,25 @@ export default async function HomePage() {
           <div className="mt-3 flex flex-wrap gap-2">
             <Link href="/employees" className="border rounded px-3 py-1 hover:bg-gray-50">New Employee</Link>
             <Link href="/payroll" className="border rounded px-3 py-1 hover:bg-gray-50">Create Paystub</Link>
+            <Link href="/cra" className="border rounded px-3 py-1 hover:bg-gray-50">Open CRA</Link>
           </div>
         </div>
 
         <div className="border rounded-lg p-4">
-          <div className="text-sm text-gray-500">Support & Next Steps</div>
-          <ul className="mt-2 space-y-1 text-sm">
-            <li>
-              <Link
-                href="/employees"
-                className="flex items-center gap-2 rounded-md px-3 py-1 transition-all
-                hover:bg-gray-100 hover:scale-[1.02] hover:shadow-sm"
-              >
-                👤 Add employee
-              </Link>
-            </li>
-
-            <li>
-              <Link
-                href="/payroll"
-                className="flex items-center gap-2 rounded-md px-3 py-1 transition-all
-                hover:bg-gray-100 hover:scale-[1.02] hover:shadow-sm"
-              >
-                📄 Generate paystub
-              </Link>
-            </li>
-
-            <li className="flex items-center gap-2 rounded-md px-3 py-1 transition-all
-                hover:bg-gray-100 hover:scale-[1.02] hover:shadow-sm">
-              📤 Export payroll <span className="text-gray-400 text-xs">(soon)</span>
-            </li>
-
-          </ul>
+          <div className="text-sm text-gray-500">CRA summary</div>
+          <div className="mt-2 space-y-2 text-sm">
+            <p className="text-2xl font-semibold text-gray-900">
+              {formatMoney.format(craDashboard.outstandingTotal.toNumber())}
+            </p>
+            <p className="text-gray-600">
+              {craDashboard.nextDue
+                ? `Next CRA payment due ${new Date(craDashboard.nextDue.dueDate).toLocaleDateString()}`
+                : "No open remittance yet"}
+            </p>
+            <Link href="/cra" className="inline-flex rounded border px-3 py-1 hover:bg-gray-50">
+              View CRA workspace
+            </Link>
+          </div>
         </div>
 
 
