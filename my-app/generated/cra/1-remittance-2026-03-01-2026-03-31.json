@@ -1,0 +1,15 @@
+{
+  "label": "March 2026",
+  "periodStart": "2026-03-01",
+  "periodEnd": "2026-03-31",
+  "dueDate": "2026-04-15",
+  "employeeCount": 3,
+  "totals": {
+    "incomeTax": 3499.41,
+    "cppEmployee": 1038.47,
+    "cppEmployer": 1038.47,
+    "eiEmployee": 289.71,
+    "eiEmployer": 405.59,
+    "totalPayable": 6271.65
+  }
+}

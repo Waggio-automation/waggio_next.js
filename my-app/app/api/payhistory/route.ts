@@ -111,8 +111,12 @@ export async function POST(req: NextRequest) {
 
 const statusPatchSchema = z.object({
   ids: z.array(z.union([z.string(), z.number()])).min(1), // PayHistory.id (BIGSERIAL)
-  status: z.enum(["PENDING", "PROCESSED", "READY", "SENDING" ,"SENT"]),
+  status: z.enum(["PENDING", "PROCESSED", "READY", "SENDING", "SENT", "EMAIL_SENT", "FAILED"]),
   pdfUrl: z.string().optional(),
+  emailSentAt: z.string().optional(),
+  emailProvider: z.string().optional(),
+  deliveryStatus: z.string().optional(),
+  failureReason: z.string().optional(),
 });
 
 export async function PATCH(req: NextRequest) {
@@ -122,7 +126,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Validation failed", issues: parsed.error.issues }, { status: 400 });
   }
 
-  const { ids, status, pdfUrl } = parsed.data;
+  const { ids, status, pdfUrl, emailSentAt, emailProvider, deliveryStatus, failureReason } = parsed.data;
 
   const idList: bigint[] = [];
   for (const value of ids) {
@@ -136,6 +140,10 @@ export async function PATCH(req: NextRequest) {
   const updateData = {
     status,
     ...(pdfUrl !== undefined ? { pdfUrl } : {}),
+    ...(emailSentAt !== undefined ? { emailSentAt: new Date(emailSentAt) } : {}),
+    ...(emailProvider !== undefined ? { emailProvider } : {}),
+    ...(deliveryStatus !== undefined ? { deliveryStatus } : {}),
+    ...(failureReason !== undefined ? { failureReason } : {}),
   };
 
   const updated = await prisma.payHistory.updateMany({
