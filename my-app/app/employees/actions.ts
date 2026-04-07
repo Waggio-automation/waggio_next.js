@@ -5,43 +5,53 @@ import { getPrimaryCompany } from "@/lib/company";
 import { employeeInputSchema } from "./validators";
 import { revalidatePath } from "next/cache";
 
-export async function createEmployee(formData: FormData) {
+export type CreateEmployeeState = { errors: Record<string, string> } | { success: true } | null;
+
+export async function createEmployee(prevState: CreateEmployeeState, formData: FormData): Promise<CreateEmployeeState> {
   // 1) 폼 → 객체
   const obj = Object.fromEntries(formData.entries());
 
   // 2) 검증/정규화
-  const parsed = employeeInputSchema.parse(obj);
+  const parsed = employeeInputSchema.safeParse(obj);
+  if (!parsed.success) {
+    const errors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) {
+      const field = String(issue.path[0] ?? "form");
+      if (!errors[field]) errors[field] = issue.message;
+    }
+    return { errors };
+  }
 
   // 3) 저장
   const company = await getPrimaryCompany();
   const created = await prisma.employee.create({
     data: {
       companyId: company?.id ?? null,
-      firstName: parsed.firstName,
-      lastName : parsed.lastName,
-      email    : parsed.email,
-      sin      : parsed.sin,
+      firstName: parsed.data.firstName,
+      lastName : parsed.data.lastName,
+      email    : parsed.data.email,
+      sin      : parsed.data.sin,
 
-      paymentMethod: parsed.paymentMethod,
+      paymentMethod: parsed.data.paymentMethod,
 
-      addrLine1: parsed.addrLine1,
-      addrLine2: parsed.addrLine2 || null,
-      addrCity : parsed.addrCity,
-      addrProvince: parsed.addrProvince,
-      addrPostal  : parsed.addrPostal,
-      addrCountry : parsed.addrCountry,
+      addrLine1: parsed.data.addrLine1,
+      addrLine2: parsed.data.addrLine2 || null,
+      addrCity : parsed.data.addrCity,
+      addrProvince: parsed.data.addrProvince,
+      addrPostal  : parsed.data.addrPostal,
+      addrCountry : parsed.data.addrCountry,
 
-      birthDate: parsed.birthDate,
-      employmentType: parsed.employmentType,
-      hireDate: parsed.hireDate,
-      payGroup: parsed.payGroup,
-      payType : parsed.payType,
-      hourlyRate: parsed.hourlyRate ?? null,
-      salary    : parsed.salary ?? null,
-      vacationPay: parsed.vacationPay,
-      bonus      : parsed.bonus,
-      federalTD1 : parsed.federalTD1,
-      provincialTD1: parsed.provincialTD1,
+      birthDate: parsed.data.birthDate,
+      employmentType: parsed.data.employmentType,
+      hireDate: parsed.data.hireDate,
+      payGroup: parsed.data.payGroup,
+      payType : parsed.data.payType,
+      hourlyRate: parsed.data.hourlyRate ?? null,
+      salary    : parsed.data.salary ?? null,
+      vacationPay: parsed.data.vacationPay,
+      bonus      : parsed.data.bonus,
+      federalTD1 : parsed.data.federalTD1,
+      provincialTD1: parsed.data.provincialTD1,
       payoutSetupStatus: "REQUIRED",
       payoutEnabled: false,
     },
@@ -66,4 +76,5 @@ export async function createEmployee(formData: FormData) {
   }
 
   revalidatePath("/employees"); // 목록 즉시 갱신
+  return { success: true };
 }

@@ -16,7 +16,19 @@ export const employeeInputSchema = z.object({
   firstName: z.string().min(1),
   lastName : z.string().min(1),
   email    : z.string().email(),
-  sin      : z.string().regex(/^\d{9}$/, "SIN must be 9 digits"),
+  sin      : z.string()
+    .regex(/^\d{9}$/, "SIN must be 9 digits")
+    .refine((sin) => {
+      const digits = sin.split("").map(Number);
+      const sum = digits.reduce((acc, digit, i) => {
+        if (i % 2 === 1) {
+          const doubled = digit * 2;
+          return acc + (doubled > 9 ? doubled - 9 : doubled);
+        }
+        return acc + digit;
+      }, 0);
+      return sum % 10 === 0;
+    }, "SIN is invalid (fails Luhn check)"),
 
   addrLine1: z.string().min(1),
   addrLine2: z.string().optional(),
