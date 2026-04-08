@@ -39,8 +39,14 @@ export async function POST(req: Request) {
     const { items, payDate, periodStart, periodEnd, sendAt, timezone } = parsed.data;
 
     const payrollRun = await prisma.$transaction(async (tx) => {
+      const firstEmp = await tx.employee.findUnique({
+        where: { id: BigInt(items[0].employeeId) },
+        select: { companyId: true },
+      });
+
       const createdRun = await tx.payrollRun.create({
         data: {
+          companyId: firstEmp?.companyId ?? null,
           payDate: new Date(payDate),
           sendAt: new Date(sendAt),
           status: "SCHEDULED" ,

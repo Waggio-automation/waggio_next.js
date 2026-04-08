@@ -29,6 +29,11 @@ export async function GET(req: NextRequest) {
   const data = await prisma.payrollRun.findMany({
     where: status ? { status: status as (typeof VALID_PAYROLL_RUN_STATUSES)[number] } : undefined,
     include: {
+      company: {
+        select: {
+          adminEmail: true,
+        },
+      },
       payHistory: {
         include: {
           employee: {

@@ -184,6 +184,7 @@ model PayHistory {
   review_errors   String[]      @default([])
   review_warnings String[]      @default([])
   createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
   remittanceAllocations RemittancePayHistory[]
 
   @@index([employeeId, payDate])
@@ -192,6 +193,8 @@ model PayHistory {
 
 model PayrollRun {
   id            BigInt            @id @default(autoincrement())
+  companyId     BigInt?
+  company       Company?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
   payDate       DateTime
   sendAt        DateTime?
   status        PayrollRunStatus  @default(SCHEDULED)
@@ -204,6 +207,7 @@ model PayrollRun {
 
   payHistory    PayHistory[]
 
+  @@index([companyId])
   @@index([payDate, status])
   @@index([sendAt])
 }
@@ -220,6 +224,7 @@ model Company {
   settings            CompanySettings?
   payrollSettings     CompanyPayrollSettings?
   employees           Employee[]
+  payrollRuns         PayrollRun[]
   remittances         Remittance[]
   t4Slips             T4Slip[]
   t4Summaries         T4Summary[]
