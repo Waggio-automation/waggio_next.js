@@ -8,41 +8,41 @@ datasource db {
 }
 
 model Employee {
-  id                          BigInt                  @id @default(autoincrement())
+  id                          BigInt                 @id @default(autoincrement())
   firstName                   String
   lastName                    String
   email                       String
   sin                         String
-  dentalBenefitsCoverage      DentalBenefitsCoverage  @default(NONE)
-  paymentMethod               PaymentMethod           @default(CHEQUE)
+  dentalBenefitsCoverage      DentalBenefitsCoverage @default(NONE)
+  paymentMethod               PaymentMethod          @default(CHEQUE)
   addrLine1                   String
   addrLine2                   String?
   addrCity                    String
-  addrProvince                String                  @default("ON")
+  addrProvince                String                 @default("ON")
   addrPostal                  String
-  addrCountry                 String                  @default("CA")
+  addrCountry                 String                 @default("CA")
   birthDate                   DateTime
   employmentType              EmploymentType
   hireDate                    DateTime
-  payGroup                    PayGroup                @default(BI_WEEKLY)
+  payGroup                    PayGroup               @default(BI_WEEKLY)
   payType                     PayType
   hourlyRate                  Decimal?
   salary                      Decimal?
   rppDpspRegistrationNumber   String?
   pensionAdjustmentOverride   Decimal?
-  vacationPay                 Decimal                 @default(4)
-  bonus                       Decimal                 @default(0)
-  federalTD1                  Decimal                 @default(15492)
-  provincialTD1               Decimal                 @default(12298)
-  createdAt                   DateTime                @default(now())
-  updatedAt                   DateTime                @updatedAt
-  trolleyRecipientId          String?                 @unique
-  payoutEnabled               Boolean                 @default(false)
-  payoutSetupStatus           PayoutSetupStatus       @default(REQUIRED)
+  vacationPay                 Decimal                @default(4)
+  bonus                       Decimal                @default(0)
+  federalTD1                  Decimal                @default(15492)
+  provincialTD1               Decimal                @default(12298)
+  createdAt                   DateTime               @default(now())
+  updatedAt                   DateTime               @updatedAt
+  trolleyRecipientId          String?                @unique
+  payoutEnabled               Boolean                @default(false)
+  payoutSetupStatus           PayoutSetupStatus      @default(REQUIRED)
   companyId                   BigInt?
-  trolleyRecipientAccountId   String?                 @unique
+  trolleyRecipientAccountId   String?                @unique
   trolleyRecipientAccountType String?
-  company                     Company?                @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  company                     Company?               @relation(fields: [companyId], references: [id], onDelete: SetNull)
   payHistory                  PayHistory[]
   t4Slips                     T4Slip[]
 
@@ -51,36 +51,36 @@ model Employee {
 }
 
 model PayHistory {
-  id                    BigInt                @id @default(autoincrement())
+  id                    BigInt                 @id @default(autoincrement())
   employeeId            BigInt
   payDate               DateTime
   grossPay              Decimal
-  ded_cpp               Decimal               @default(0)
-  ded_ei                Decimal               @default(0)
-  ded_income_tax        Decimal               @default(0)
-  ded_eht               Decimal               @default(0)
-  ded_wsib              Decimal               @default(0)
+  ded_cpp               Decimal                @default(0)
+  ded_ei                Decimal                @default(0)
+  ded_income_tax        Decimal                @default(0)
+  ded_eht               Decimal                @default(0)
+  ded_wsib              Decimal                @default(0)
   netPay                Decimal
   paidAt                DateTime?
   paymentProvider       String?
   paymentRef            String?
   failureReason         String?
-  attemptCount          Int                   @default(0)
+  attemptCount          Int                    @default(0)
   lastAttemptAt         DateTime?
-  review_valid          Boolean               @default(true)
-  review_errors         String[]              @default([])
-  review_warnings       String[]              @default([])
-  createdAt             DateTime              @default(now())
-  updatedAt             DateTime              @updatedAt
+  review_valid          Boolean                @default(true)
+  review_errors         String[]               @default([])
+  review_warnings       String[]               @default([])
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
   payrollRunId          BigInt?
   hoursWorked           Decimal?
   deliveryStatus        String?
   emailProvider         String?
   emailSentAt           DateTime?
-  status                PayHistoryStatus      @default(PENDING)
+  status                PayHistoryStatus       @default(PENDING)
   pdfUrl                String?
-  employee              Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  payrollRun            PayrollRun?           @relation(fields: [payrollRunId], references: [id], onDelete: SetNull)
+  employee              Employee               @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  payrollRun            PayrollRun?            @relation(fields: [payrollRunId], references: [id], onDelete: SetNull)
   remittanceAllocations RemittancePayHistory[]
 
   @@index([employeeId, payDate])
@@ -88,20 +88,20 @@ model PayHistory {
 }
 
 model PayrollRun {
-  id            BigInt            @id @default(autoincrement())
+  id            BigInt              @id @default(autoincrement())
   companyId     BigInt?
-  company       Company?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  company       Company?            @relation(fields: [companyId], references: [id], onDelete: SetNull)
   payDate       DateTime
   sendAt        DateTime?
-  status        PayrollRunStatus  @default(SCHEDULED)
+  status        PayrollRunStatus    @default(SCHEDULED)
   failureType   PayrollFailureType?
   failureReason String?
   providerRef   String?
   meta          Json?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 
-  payHistory    PayHistory[]
+  payHistory PayHistory[]
 
   @@index([companyId])
   @@index([payDate, status])
@@ -172,30 +172,30 @@ model CompanyPayrollSettings {
 }
 
 model Remittance {
-  id                   BigInt            @id @default(autoincrement())
+  id                   BigInt           @id @default(autoincrement())
   companyId            BigInt
-  company              Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company              Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   periodStart          DateTime
   periodEnd            DateTime
   remitterTypeSnapshot RemitterType
-  status               RemittanceStatus  @default(DUE)
+  status               RemittanceStatus @default(DUE)
   dueDate              DateTime
-  employeeCount        Int               @default(0)
-  totalIncomeTax       Decimal           @default(0)
-  totalCppEmployee     Decimal           @default(0)
-  totalCppEmployer     Decimal           @default(0)
-  totalEiEmployee      Decimal           @default(0)
-  totalEiEmployer      Decimal           @default(0)
-  totalPayable         Decimal           @default(0)
+  employeeCount        Int              @default(0)
+  totalIncomeTax       Decimal          @default(0)
+  totalCppEmployee     Decimal          @default(0)
+  totalCppEmployer     Decimal          @default(0)
+  totalEiEmployee      Decimal          @default(0)
+  totalEiEmployer      Decimal          @default(0)
+  totalPayable         Decimal          @default(0)
   paidAt               DateTime?
   notes                String?
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
 
-  payments             RemittancePayment[]
-  allocations          RemittancePayHistory[]
-  documents            Document[]
-  reminders            ReminderEvent[]
+  payments    RemittancePayment[]
+  allocations RemittancePayHistory[]
+  documents   Document[]
+  reminders   ReminderEvent[]
 
   @@unique([companyId, periodStart, periodEnd])
   @@index([companyId, dueDate, status])
