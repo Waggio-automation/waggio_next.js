@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { updateEmployeeCraProfileAction } from "../actions";
 import PaymentStatusCard from "./payment-status-card";
 
 function toUiPayoutStatus(status: string) {
@@ -42,6 +43,9 @@ export default async function EmployeeDetailPage({
       employmentType: true,
       payType: true,
       payGroup: true,
+      dentalBenefitsCoverage: true,
+      rppDpspRegistrationNumber: true,
+      pensionAdjustmentOverride: true,
       payoutSetupStatus: true,
       payoutEnabled: true,
       trolleyRecipientAccountType: true,
@@ -74,6 +78,65 @@ export default async function EmployeeDetailPage({
           <p>Pay group: {employee.payGroup}</p>
           <p>Created: {employee.createdAt.toLocaleDateString()}</p>
         </div>
+      </section>
+
+      <section className="rounded border p-4 space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">CRA / T4 profile</h2>
+          <p className="text-sm text-gray-600">
+            Manage year-end filing details here instead of entering CRA box codes directly.
+          </p>
+        </div>
+
+        <form action={updateEmployeeCraProfileAction} className="grid gap-4 md:grid-cols-2">
+          <input type="hidden" name="employeeId" value={employee.id.toString()} />
+
+          <label className="flex flex-col gap-2 text-sm text-gray-700 md:col-span-2">
+            <span>Dental benefits coverage</span>
+            <select
+              name="dentalBenefitsCoverage"
+              defaultValue={employee.dentalBenefitsCoverage}
+              className="rounded border px-3 py-2"
+            >
+              <option value="NONE">No employer-offered dental benefits</option>
+              <option value="EMPLOYEE_ONLY">Employee only</option>
+              <option value="EMPLOYEE_AND_SPOUSE">Employee and spouse</option>
+              <option value="EMPLOYEE_AND_CHILDREN">Employee and dependent children</option>
+              <option value="EMPLOYEE_AND_FAMILY">Employee, spouse, and dependent children</option>
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-2 text-sm text-gray-700">
+            <span>RPP or DPSP registration number</span>
+            <input
+              type="text"
+              name="rppDpspRegistrationNumber"
+              defaultValue={employee.rppDpspRegistrationNumber ?? ""}
+              className="rounded border px-3 py-2"
+            />
+          </label>
+
+          <label className="flex flex-col gap-2 text-sm text-gray-700">
+            <span>Pension adjustment override</span>
+            <input
+              type="number"
+              name="pensionAdjustmentOverride"
+              step="0.01"
+              min="0"
+              defaultValue={employee.pensionAdjustmentOverride?.toString() ?? ""}
+              className="rounded border px-3 py-2"
+            />
+          </label>
+
+          <div className="md:col-span-2 flex justify-end">
+            <button
+              type="submit"
+              className="rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+            >
+              Save CRA / T4 profile
+            </button>
+          </div>
+        </form>
       </section>
 
       <PaymentStatusCard

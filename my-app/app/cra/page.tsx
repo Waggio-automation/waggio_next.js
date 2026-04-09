@@ -18,10 +18,58 @@ function formatDate(value: Date) {
   }).format(value);
 }
 
+function formatMonthYear(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  return new Intl.DateTimeFormat("en-CA", {
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
+
+function formatDashboardDocumentLabel(document: {
+  documentType: string;
+  fileName: string;
+  taxYear: number | null;
+}) {
+  if (document.documentType === "T4_SUMMARY") {
+    return document.taxYear ? `${document.taxYear} T4 summary` : "T4 summary";
+  }
+
+  if (document.documentType === "REMITTANCE_REPORT") {
+    const match = document.fileName.match(/remittance-(\d{4}-\d{2})-\d{2}-\d{4}-\d{2}-\d{2}\.json$/);
+    if (match) {
+      return `${formatMonthYear(match[1])} remittance report`;
+    }
+    return "Remittance report";
+  }
+
+  return document.fileName;
+}
+
+function formatDashboardDocumentMeta(document: {
+  documentType: string;
+  taxYear: number | null;
+}) {
+  if (document.documentType === "T4_SUMMARY") {
+    return document.taxYear ? `Year-end filing for ${document.taxYear}` : "Year-end filing";
+  }
+
+  if (document.documentType === "REMITTANCE_REPORT") {
+    return "Payroll remittance filing";
+  }
+
+  return document.documentType.replaceAll("_", " ");
+}
+
 function badgeTone(status: string) {
   if (status === "PAID") return "bg-emerald-100 text-emerald-800";
+  if (status === "PARTIALLY_PAID") return "bg-sky-100 text-sky-800";
   if (status === "OVERDUE") return "bg-red-100 text-red-800";
   return "bg-amber-100 text-amber-800";
+}
+
+function formatStatusLabel(status: string) {
+  return status.replaceAll("_", " ");
 }
 
 export default async function CraDashboardPage() {
@@ -105,7 +153,7 @@ export default async function CraDashboardPage() {
                     <td className="py-3 pr-3 text-gray-700">{item.employeeCount}</td>
                     <td className="py-3 pr-3">
                       <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${badgeTone(item.status)}`}>
-                        {item.status}
+                        {formatStatusLabel(item.status)}
                       </span>
                     </td>
                     <td className="py-3">
@@ -183,8 +231,8 @@ export default async function CraDashboardPage() {
             {dashboard.documents.map((document) => (
               <div key={document.id.toString()} className="flex items-center justify-between gap-4 rounded-2xl border border-gray-200 px-4 py-3">
                 <div>
-                  <p className="text-sm font-medium text-gray-900">{document.fileName}</p>
-                  <p className="text-xs text-gray-500">{document.documentType}</p>
+                  <p className="text-sm font-medium text-gray-900">{formatDashboardDocumentLabel(document)}</p>
+                  <p className="text-xs text-gray-500">{formatDashboardDocumentMeta(document)}</p>
                 </div>
                 <span className="text-xs text-gray-500">{formatDate(document.uploadedAt)}</span>
               </div>

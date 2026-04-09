@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import puppeteer from "puppeteer";
+import type { Browser } from "puppeteer";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -11,7 +12,7 @@ type PdfRequestBody = {
 };
 
 export async function POST(req: Request) {
-  let browser: puppeteer.Browser | null = null;
+  let browser: Browser | null = null;
 
   try {
     const body = (await req.json()) as PdfRequestBody;

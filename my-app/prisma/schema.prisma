@@ -1,10 +1,335 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
+model Employee {
+  id                          BigInt                 @id @default(autoincrement())
+  firstName                   String
+  lastName                    String
+  email                       String
+  sin                         String
+  dentalBenefitsCoverage      DentalBenefitsCoverage @default(NONE)
+  paymentMethod               PaymentMethod          @default(CHEQUE)
+  addrLine1                   String
+  addrLine2                   String?
+  addrCity                    String
+  addrProvince                String                 @default("ON")
+  addrPostal                  String
+  addrCountry                 String                 @default("CA")
+  birthDate                   DateTime
+  employmentType              EmploymentType
+  hireDate                    DateTime
+  payGroup                    PayGroup               @default(BI_WEEKLY)
+  payType                     PayType
+  hourlyRate                  Decimal?
+  salary                      Decimal?
+  rppDpspRegistrationNumber   String?
+  pensionAdjustmentOverride   Decimal?
+  vacationPay                 Decimal                @default(4)
+  bonus                       Decimal                @default(0)
+  federalTD1                  Decimal                @default(15492)
+  provincialTD1               Decimal                @default(12298)
+  createdAt                   DateTime               @default(now())
+  updatedAt                   DateTime               @updatedAt
+  trolleyRecipientId          String?                @unique
+  payoutEnabled               Boolean                @default(false)
+  payoutSetupStatus           PayoutSetupStatus      @default(REQUIRED)
+  companyId                   BigInt?
+  trolleyRecipientAccountId   String?                @unique
+  trolleyRecipientAccountType String?
+  company                     Company?               @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  payHistory                  PayHistory[]
+  t4Slips                     T4Slip[]
+
+  @@index([companyId])
+  @@index([email, hireDate])
+}
+
+model PayHistory {
+  id                    BigInt                 @id @default(autoincrement())
+  employeeId            BigInt
+  payDate               DateTime
+  grossPay              Decimal
+  ded_cpp               Decimal                @default(0)
+  ded_ei                Decimal                @default(0)
+  ded_income_tax        Decimal                @default(0)
+  ded_eht               Decimal                @default(0)
+  ded_wsib              Decimal                @default(0)
+  netPay                Decimal
+  paidAt                DateTime?
+  paymentProvider       String?
+  paymentRef            String?
+  failureReason         String?
+  attemptCount          Int                    @default(0)
+  lastAttemptAt         DateTime?
+  review_valid          Boolean                @default(true)
+  review_errors         String[]               @default([])
+  review_warnings       String[]               @default([])
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  payrollRunId          BigInt?
+  hoursWorked           Decimal?
+  deliveryStatus        String?
+  emailProvider         String?
+  emailSentAt           DateTime?
+  status                PayHistoryStatus       @default(PENDING)
+  pdfUrl                String?
+  employee              Employee               @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  payrollRun            PayrollRun?            @relation(fields: [payrollRunId], references: [id], onDelete: SetNull)
+  remittanceAllocations RemittancePayHistory[]
+
+  @@index([employeeId, payDate])
+  @@index([payrollRunId])
+}
+
+model PayrollRun {
+  id            BigInt              @id @default(autoincrement())
+  companyId     BigInt?
+  company       Company?            @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  payDate       DateTime
+  sendAt        DateTime?
+  status        PayrollRunStatus    @default(SCHEDULED)
+  failureType   PayrollFailureType?
+  failureReason String?
+  providerRef   String?
+  meta          Json?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  payHistory PayHistory[]
+
+  @@index([companyId])
+  @@index([payDate, status])
+  @@index([sendAt])
+}
+
+model Company {
+  id                  BigInt                  @id @default(autoincrement())
+  name                String?
+  adminEmail          String
+  adminTokenHash      String?
+  adminTokenCreatedAt DateTime?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  auditLogs           AuditLog[]
+  payrollSettings     CompanyPayrollSettings?
+  settings            CompanySettings?
+  documents           Document[]
+  employees           Employee[]
+  payrollRuns         PayrollRun[]
+  reminderEvents      ReminderEvent[]
+  remittances         Remittance[]
+  t4Slips             T4Slip[]
+  t4Summaries         T4Summary[]
+}
+
+model CompanySettings {
+  id                    BigInt            @id @default(autoincrement())
+  payoutEnabled         Boolean           @default(false)
+  payoutSetupStatus     PayoutSetupStatus @default(REQUIRED)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  companyId             BigInt?           @unique
+  defaultPayoutCurrency String            @default("CAD")
+  defaultPayoutCountry  String            @default("CA")
+  trolleyBatchPrefix    String?
+  company               Company?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+}
+
+model CompanyPayrollSettings {
+  id                           BigInt       @id @default(autoincrement())
+  companyId                    BigInt       @unique
+  legalName                    String?
+  businessNumber               String?
+  payrollProgramAccount        String?
+  addressLine1                 String?
+  addressLine2                 String?
+  city                         String?
+  provinceCode                 String?
+  postalCode                   String?
+  countryCode                  String?      @default("CAN")
+  remitterType                 RemitterType @default(MONTHLY)
+  contactName                  String?
+  contactPhone                 String?
+  contactPhoneExtension        String?
+  contactEmail                 String?
+  transmitterAccountNumber     String?
+  transmitterRepId             String?
+  submissionLanguageCode       String?      @default("E")
+  preDueReminderDays           Int          @default(7)
+  postDueReminderFrequencyDays Int          @default(7)
+  firstRemittancePeriodStart   DateTime?
+  createdAt                    DateTime     @default(now())
+  updatedAt                    DateTime     @updatedAt
+  company                      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+model Remittance {
+  id                   BigInt           @id @default(autoincrement())
+  companyId            BigInt
+  company              Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  periodStart          DateTime
+  periodEnd            DateTime
+  remitterTypeSnapshot RemitterType
+  status               RemittanceStatus @default(DUE)
+  dueDate              DateTime
+  employeeCount        Int              @default(0)
+  totalIncomeTax       Decimal          @default(0)
+  totalCppEmployee     Decimal          @default(0)
+  totalCppEmployer     Decimal          @default(0)
+  totalEiEmployee      Decimal          @default(0)
+  totalEiEmployer      Decimal          @default(0)
+  totalPayable         Decimal          @default(0)
+  paidAt               DateTime?
+  notes                String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  payments    RemittancePayment[]
+  allocations RemittancePayHistory[]
+  documents   Document[]
+  reminders   ReminderEvent[]
+
+  @@unique([companyId, periodStart, periodEnd])
+  @@index([companyId, dueDate, status])
+}
+
+model RemittancePayHistory {
+  remittanceId BigInt
+  payHistoryId BigInt     @unique
+  createdAt    DateTime   @default(now())
+  payHistory   PayHistory @relation(fields: [payHistoryId], references: [id], onDelete: Cascade)
+  remittance   Remittance @relation(fields: [remittanceId], references: [id], onDelete: Cascade)
+
+  @@id([remittanceId, payHistoryId])
+  @@index([payHistoryId])
+}
+
+model RemittancePayment {
+  id              BigInt                  @id @default(autoincrement())
+  remittanceId    BigInt
+  paymentDate     DateTime
+  amountPaid      Decimal
+  paymentMethod   String?
+  referenceNumber String?
+  status          RemittancePaymentStatus @default(RECORDED)
+  notes           String?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  documents       Document[]
+  remittance      Remittance              @relation(fields: [remittanceId], references: [id], onDelete: Cascade)
+
+  @@index([remittanceId, paymentDate])
+}
+
+model T4Slip {
+  id                       BigInt             @id @default(autoincrement())
+  companyId                BigInt
+  employeeId               BigInt
+  taxYear                  Int
+  status                   T4GenerationStatus @default(NOT_GENERATED)
+  employmentIncome         Decimal            @default(0)
+  incomeTaxDeducted        Decimal            @default(0)
+  cppContributionsEmployee Decimal            @default(0)
+  eiPremiumsEmployee       Decimal            @default(0)
+  otherBoxPayload          Json?
+  generatedAt              DateTime?
+  finalizedAt              DateTime?
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
+  summaryId                BigInt?
+  documents                Document[]
+  company                  Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee                 Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  summary                  T4Summary?         @relation(fields: [summaryId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, employeeId, taxYear])
+  @@index([companyId, taxYear, status])
+}
+
+model T4Summary {
+  id                     BigInt             @id @default(autoincrement())
+  companyId              BigInt
+  taxYear                Int
+  status                 T4GenerationStatus @default(NOT_GENERATED)
+  employeeCount          Int                @default(0)
+  totalEmploymentIncome  Decimal            @default(0)
+  totalIncomeTaxDeducted Decimal            @default(0)
+  totalCppEmployee       Decimal            @default(0)
+  totalEiEmployee        Decimal            @default(0)
+  generatedAt            DateTime?
+  finalizedAt            DateTime?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  documents              Document[]
+  slips                  T4Slip[]
+  company                Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, taxYear])
+}
+
+model ReminderEvent {
+  id            BigInt        @id @default(autoincrement())
+  companyId     BigInt
+  remittanceId  BigInt?
+  reminderState ReminderState
+  scheduledFor  DateTime
+  sentAt        DateTime?
+  channel       String        @default("dashboard")
+  createdAt     DateTime      @default(now())
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  remittance    Remittance?   @relation(fields: [remittanceId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, scheduledFor])
+  @@index([remittanceId, reminderState])
+}
+
+model Document {
+  id                  BigInt             @id @default(autoincrement())
+  companyId           BigInt
+  documentType        DocumentType
+  fileName            String
+  storagePath         String
+  mimeType            String             @default("application/json")
+  linkedEntityType    LinkedEntityType
+  linkedEntityId      BigInt
+  taxYear             Int?
+  uploadedBy          String?
+  uploadedAt          DateTime           @default(now())
+  remittanceId        BigInt?
+  remittancePaymentId BigInt?
+  t4SlipId            BigInt?
+  t4SummaryId         BigInt?
+  company             Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  remittance          Remittance?        @relation(fields: [remittanceId], references: [id], onDelete: Cascade)
+  remittancePayment   RemittancePayment? @relation(fields: [remittancePaymentId], references: [id], onDelete: Cascade)
+  t4Slip              T4Slip?            @relation(fields: [t4SlipId], references: [id], onDelete: Cascade)
+  t4Summary           T4Summary?         @relation(fields: [t4SummaryId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, documentType, uploadedAt])
+}
+
+model AuditLog {
+  id           BigInt   @id @default(autoincrement())
+  companyId    BigInt
+  actorType    String
+  actorId      String?
+  action       String
+  targetType   String
+  targetId     String
+  metadataJson Json?
+  createdAt    DateTime @default(now())
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, createdAt])
+  @@index([targetType, targetId])
 }
 
 enum EmploymentType {
@@ -28,15 +353,23 @@ enum PaymentMethod {
   DIRECT_DEPOSIT
 }
 
+enum DentalBenefitsCoverage {
+  NONE
+  EMPLOYEE_ONLY
+  EMPLOYEE_AND_SPOUSE
+  EMPLOYEE_AND_CHILDREN
+  EMPLOYEE_AND_FAMILY
+}
+
 enum PayHistoryStatus {
   PENDING
   PROCESSING
   PROCESSED
   READY
+  SENT
   SENDING
   EMAIL_SENT
   FAILED
-  SENT
 }
 
 enum PayoutSetupStatus {
@@ -48,12 +381,12 @@ enum PayoutSetupStatus {
 
 enum PayrollRunStatus {
   SCHEDULED
-  PROCESSED
   FUNDING
   FUNDS_CONFIRMED
   PAYING
   PAID
   FAILED
+  PROCESSED
 }
 
 enum PayrollFailureType {
@@ -71,6 +404,7 @@ enum RemitterType {
 enum RemittanceStatus {
   DUE
   PAID
+  PARTIALLY_PAID
   OVERDUE
 }
 
@@ -107,324 +441,4 @@ enum LinkedEntityType {
   T4_SLIP
   T4_SUMMARY
   COMPANY
-}
-
-model Employee {
-  id                BigInt        @id @default(autoincrement())
-  companyId         BigInt?
-  company           Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  firstName         String
-  lastName          String
-  email             String
-  sin               String
-  paymentMethod     PaymentMethod @default(CHEQUE)
-
-  addrLine1         String
-  addrLine2         String?
-  addrCity          String
-  addrProvince      String        @default("ON")
-  addrPostal        String
-  addrCountry       String        @default("CA")
-
-  birthDate         DateTime
-  employmentType    EmploymentType
-  hireDate          DateTime
-  payGroup          PayGroup      @default(BI_WEEKLY)
-  payType           PayType
-  hourlyRate        Decimal?
-  salary            Decimal?
-  vacationPay       Decimal       @default(4)
-  bonus             Decimal       @default(0)
-  federalTD1        Decimal       @default(15492)
-  provincialTD1     Decimal       @default(12298)
-
-  trolleyRecipientId   String?       @unique
-  trolleyRecipientAccountId String?   @unique
-  trolleyRecipientAccountType String?
-  payoutEnabled     Boolean       @default(false)
-  payoutSetupStatus PayoutSetupStatus @default(REQUIRED)
-
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-
-  payHistory        PayHistory[]
-  t4Slips           T4Slip[]
-
-  @@index([companyId])
-  @@index([email, hireDate])
-}
-
-model PayHistory {
-  id              BigInt       @id @default(autoincrement())
-  employee        Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  employeeId      BigInt
-  payrollRun      PayrollRun?  @relation(fields: [payrollRunId], references: [id], onDelete: SetNull)
-  payrollRunId    BigInt?
-  payDate         DateTime
-  hoursWorked     Decimal?
-  grossPay        Decimal
-  ded_cpp         Decimal       @default(0)
-  ded_ei          Decimal       @default(0)
-  ded_income_tax  Decimal       @default(0)
-  ded_eht         Decimal       @default(0)
-  ded_wsib        Decimal       @default(0)
-  netPay          Decimal
-  status          PayHistoryStatus @default(PENDING)
-  paidAt          DateTime?
-  paymentProvider String?
-  paymentRef      String?
-  pdfUrl          String?
-  emailSentAt     DateTime?
-  emailProvider   String?
-  deliveryStatus  String?
-  failureReason   String?
-  attemptCount    Int           @default(0)
-  lastAttemptAt   DateTime?
-  review_valid    Boolean       @default(true)
-  review_errors   String[]      @default([])
-  review_warnings String[]      @default([])
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  remittanceAllocations RemittancePayHistory[]
-
-  @@index([employeeId, payDate])
-  @@index([payrollRunId])
-}
-
-model PayrollRun {
-  id            BigInt            @id @default(autoincrement())
-  companyId     BigInt?
-  company       Company?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  payDate       DateTime
-  sendAt        DateTime?
-  status        PayrollRunStatus  @default(SCHEDULED)
-  failureType   PayrollFailureType?
-  failureReason String?
-  providerRef   String?
-  meta          Json?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
-
-  payHistory    PayHistory[]
-
-  @@index([companyId])
-  @@index([payDate, status])
-  @@index([sendAt])
-}
-
-model Company {
-  id                  BigInt        @id @default(autoincrement())
-  name                String?
-  adminEmail          String
-  adminTokenHash      String?
-  adminTokenCreatedAt DateTime?
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
-
-  settings            CompanySettings?
-  payrollSettings     CompanyPayrollSettings?
-  employees           Employee[]
-  payrollRuns         PayrollRun[]
-  remittances         Remittance[]
-  t4Slips             T4Slip[]
-  t4Summaries         T4Summary[]
-  reminderEvents      ReminderEvent[]
-  documents           Document[]
-  auditLogs           AuditLog[]
-}
-
-model CompanySettings {
-  id                BigInt            @id @default(autoincrement())
-  companyId         BigInt? @unique
-  company           Company?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  payoutEnabled     Boolean           @default(false)
-  payoutSetupStatus PayoutSetupStatus @default(REQUIRED)
-  defaultPayoutCurrency String        @default("CAD")
-  defaultPayoutCountry  String        @default("CA")
-  trolleyBatchPrefix    String?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-
-  @@index([companyId])
-}
-
-model CompanyPayrollSettings {
-  id                        BigInt       @id @default(autoincrement())
-  companyId                 BigInt       @unique
-  company                   Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  legalName                 String?
-  businessNumber            String?
-  payrollProgramAccount     String?
-  remitterType              RemitterType @default(MONTHLY)
-  contactEmail              String?
-  preDueReminderDays        Int          @default(7)
-  postDueReminderFrequencyDays Int       @default(7)
-  firstRemittancePeriodStart DateTime?
-  createdAt                 DateTime     @default(now())
-  updatedAt                 DateTime     @updatedAt
-}
-
-model Remittance {
-  id                   BigInt            @id @default(autoincrement())
-  companyId            BigInt
-  company              Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  periodStart          DateTime
-  periodEnd            DateTime
-  remitterTypeSnapshot RemitterType
-  status               RemittanceStatus  @default(DUE)
-  dueDate              DateTime
-  employeeCount        Int               @default(0)
-  totalIncomeTax       Decimal           @default(0)
-  totalCppEmployee     Decimal           @default(0)
-  totalCppEmployer     Decimal           @default(0)
-  totalEiEmployee      Decimal           @default(0)
-  totalEiEmployer      Decimal           @default(0)
-  totalPayable         Decimal           @default(0)
-  paidAt               DateTime?
-  notes                String?
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
-
-  payments             RemittancePayment[]
-  allocations          RemittancePayHistory[]
-  documents            Document[]
-  reminders            ReminderEvent[]
-
-  @@unique([companyId, periodStart, periodEnd])
-  @@index([companyId, dueDate, status])
-}
-
-model RemittancePayHistory {
-  remittanceId BigInt
-  payHistoryId BigInt @unique
-  createdAt    DateTime   @default(now())
-
-  remittance   Remittance @relation(fields: [remittanceId], references: [id], onDelete: Cascade)
-  payHistory   PayHistory @relation(fields: [payHistoryId], references: [id], onDelete: Cascade)
-
-  @@id([remittanceId, payHistoryId])
-  @@index([payHistoryId])
-}
-
-model RemittancePayment {
-  id              BigInt                   @id @default(autoincrement())
-  remittanceId     BigInt
-  remittance       Remittance              @relation(fields: [remittanceId], references: [id], onDelete: Cascade)
-  paymentDate      DateTime
-  amountPaid       Decimal
-  paymentMethod    String?
-  referenceNumber  String?
-  status           RemittancePaymentStatus @default(RECORDED)
-  notes            String?
-  createdAt        DateTime                @default(now())
-  updatedAt        DateTime                @updatedAt
-
-  documents        Document[]
-
-  @@index([remittanceId, paymentDate])
-}
-
-model T4Slip {
-  id                       BigInt             @id @default(autoincrement())
-  companyId                BigInt
-  company                  Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  employeeId               BigInt
-  employee                 Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  taxYear                  Int
-  status                   T4GenerationStatus @default(NOT_GENERATED)
-  employmentIncome         Decimal            @default(0)
-  incomeTaxDeducted        Decimal            @default(0)
-  cppContributionsEmployee Decimal            @default(0)
-  eiPremiumsEmployee       Decimal            @default(0)
-  otherBoxPayload          Json?
-  generatedAt              DateTime?
-  finalizedAt              DateTime?
-  createdAt                DateTime           @default(now())
-  updatedAt                DateTime           @updatedAt
-
-  summaryId                BigInt?
-  summary                  T4Summary?         @relation(fields: [summaryId], references: [id], onDelete: SetNull)
-  documents                Document[]
-
-  @@unique([companyId, employeeId, taxYear])
-  @@index([companyId, taxYear, status])
-}
-
-model T4Summary {
-  id                       BigInt             @id @default(autoincrement())
-  companyId                BigInt
-  company                  Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  taxYear                  Int
-  status                   T4GenerationStatus @default(NOT_GENERATED)
-  employeeCount            Int                @default(0)
-  totalEmploymentIncome    Decimal            @default(0)
-  totalIncomeTaxDeducted   Decimal            @default(0)
-  totalCppEmployee         Decimal            @default(0)
-  totalEiEmployee          Decimal            @default(0)
-  generatedAt              DateTime?
-  finalizedAt              DateTime?
-  createdAt                DateTime           @default(now())
-  updatedAt                DateTime           @updatedAt
-
-  slips                    T4Slip[]
-  documents                Document[]
-
-  @@unique([companyId, taxYear])
-}
-
-model ReminderEvent {
-  id             BigInt        @id @default(autoincrement())
-  companyId       BigInt
-  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  remittanceId    BigInt?
-  remittance      Remittance?  @relation(fields: [remittanceId], references: [id], onDelete: Cascade)
-  reminderState   ReminderState
-  scheduledFor    DateTime
-  sentAt          DateTime?
-  channel         String       @default("dashboard")
-  createdAt       DateTime     @default(now())
-
-  @@index([companyId, scheduledFor])
-  @@index([remittanceId, reminderState])
-}
-
-model Document {
-  id               BigInt         @id @default(autoincrement())
-  companyId         BigInt
-  company           Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  documentType      DocumentType
-  fileName          String
-  storagePath       String
-  mimeType          String         @default("application/json")
-  linkedEntityType  LinkedEntityType
-  linkedEntityId    BigInt
-  taxYear           Int?
-  uploadedBy        String?
-  uploadedAt        DateTime       @default(now())
-  remittanceId      BigInt?
-  remittance        Remittance?    @relation(fields: [remittanceId], references: [id], onDelete: Cascade)
-  remittancePaymentId BigInt?
-  remittancePayment RemittancePayment? @relation(fields: [remittancePaymentId], references: [id], onDelete: Cascade)
-  t4SlipId          BigInt?
-  t4Slip            T4Slip?        @relation(fields: [t4SlipId], references: [id], onDelete: Cascade)
-  t4SummaryId       BigInt?
-  t4Summary         T4Summary?     @relation(fields: [t4SummaryId], references: [id], onDelete: Cascade)
-
-  @@index([companyId, documentType, uploadedAt])
-}
-
-model AuditLog {
-  id          BigInt   @id @default(autoincrement())
-  companyId    BigInt
-  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  actorType    String
-  actorId      String?
-  action       String
-  targetType   String
-  targetId     String
-  metadataJson Json?
-  createdAt    DateTime @default(now())
-
-  @@index([companyId, createdAt])
-  @@index([targetType, targetId])
 }

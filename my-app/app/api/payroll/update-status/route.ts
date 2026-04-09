@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
+import { PayHistoryStatus, Prisma } from "@prisma/client";
 
 type ScheduleBody = {
   employeeIds: (string | number)[];
@@ -74,11 +74,11 @@ export async function POST(req: Request) {
         : undefined);
 
     if (schedule) {
-      const { sendAt: _sendAt, ...scheduleMeta } = schedule;
+      const { sendAt, ...scheduleMeta } = schedule;
       const payrollRun = await prisma.payrollRun.create({
         data: {
           payDate: new Date(schedule.payDate),
-          sendAt: schedule.sendAt ? new Date(schedule.sendAt) : null,
+          sendAt: sendAt ? new Date(sendAt) : null,
           status: "SCHEDULED",
           meta: scheduleMeta as Prisma.InputJsonValue,
         },
@@ -169,10 +169,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unsupported pay history status" }, { status: 400 });
     }
 
+    const nextStatus = status as PayHistoryStatus;
+
     const validIds = ids.map((x) => BigInt(x));
     await prisma.payHistory.updateMany({
       where: { id: { in: validIds } },
-      data: { status },
+      data: { status: nextStatus },
     });
 
     return NextResponse.json({ ok: true, message: "Pay history updated" });

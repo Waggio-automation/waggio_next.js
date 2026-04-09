@@ -257,18 +257,15 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
   }
 
   return (
-    <section className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
-      <div className="border-b border-gray-200 bg-white p-6">
-        <h2 className="text-xl font-semibold text-gray-900">Payroll Run</h2>
-        <p className="mt-1 text-sm text-gray-600">
-          Review inputs, confirm payroll dates, and create paystubs without changing the current
-          calculation flow.
-        </p>
+    <section className="overflow-hidden rounded-xl border">
+      <div className="p-4 border-b bg-white">
+        <h2 className="text-lg font-semibold">Payroll Run</h2>
       </div>
 
+      {/* Employee table */}
       <div className="bg-white overflow-x-auto">
         <table className="w-full min-w-[980px] text-sm">
-          <thead className="bg-gray-50 text-gray-500">
+          <thead className="bg-gray-50">
             <tr>
               <th className="p-3 text-center">
                 <input
@@ -310,7 +307,10 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
 
               return (
                 <Fragment key={r.id}>
-                  <tr key={r.id} className={`border-t border-gray-100 ${!r.state.include ? "opacity-50" : ""}`}>
+                  <tr
+                    key={r.id}
+                    className={`border-t ${!r.state.include ? "opacity-50" : ""}`}
+                  >
                     <td className="p-3 text-center">
                       <input
                         type="checkbox"
@@ -324,13 +324,13 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
                       />
                     </td>
 
-                    <td className="p-3 font-medium text-gray-900">
+                    <td className="p-3">
                       {r.firstName} {r.lastName}
                     </td>
 
-                    <td className="p-3 text-gray-700">{r.payType}</td>
+                    <td className="p-3">{r.payType}</td>
 
-                    <td className="p-3 text-right text-gray-700">
+                    <td className="p-3 text-right">
                       {r.payType === "HOURLY"
                         ? r.hourlyRate != null
                           ? formatCad.format(r.hourlyRate) + " / hr"
@@ -356,7 +356,7 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
                               },
                             }))
                           }
-                          className="w-24 rounded-xl border border-gray-300 px-3 py-2 text-right text-sm"
+                          className="w-20 rounded border p-1 text-right"
                           disabled={!r.state.include}
                         />
                       ) : (
@@ -380,7 +380,7 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
                               },
                             }))
                           }
-                          className="w-24 rounded-xl border border-gray-300 px-3 py-2 text-right text-sm"
+                          className="w-20 rounded border p-1 text-right"
                           disabled={!r.state.include}
                         />
                       ) : (
@@ -404,7 +404,7 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
                               },
                             }))
                           }
-                          className="w-24 rounded-xl border border-gray-300 px-3 py-2 text-right text-sm"
+                          className="w-20 rounded border p-1 text-right"
                           disabled={!r.state.include}
                         />
                       ) : (
@@ -433,7 +433,7 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
                     </td>
 
                     {/* ✅ Net Pay cell with hover tooltip */}
-                    <td className="p-3 text-right font-semibold text-gray-900">
+                    <td className="p-3 text-right font-semibold">
                       <span className="relative inline-block">
                         <span className="cursor-default">
                           {formatCad.format(r.netPay)}
@@ -500,7 +500,7 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
                             [r.id]: !prev[r.id],
                           }))
                         }
-                        className="inline-flex items-center gap-1 rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                        className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-60"
                         disabled={!r.state.include}
                         aria-expanded={isExpanded}
                         aria-controls={`row-details-${r.id}`}
@@ -515,13 +515,13 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
 
                   {/* Expanded details row */}
                   {isExpanded && (
-                    <tr className="border-t border-gray-100 bg-gray-50/60">
+                    <tr className="border-t bg-gray-50/60">
                       <td colSpan={12} className="p-4">
                         <div
                           id={`row-details-${r.id}`}
                           className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 text-xs"
                         >
-                          <div className="rounded-2xl border border-gray-200 bg-white p-4">
+                          <div className="rounded-lg border border-gray-200 bg-white p-3">
                             <div className="mb-2 font-medium text-gray-900">Pay summary</div>
                             <div className="space-y-1">
                               <div className="flex justify-between">
@@ -551,7 +551,7 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
                             </div>
                           </div>
 
-                          <div className="rounded-2xl border border-gray-200 bg-white p-4">
+                          <div className="rounded-lg border border-gray-200 bg-white p-3">
                             <div className="mb-2 font-medium text-gray-900">
                               Estimated deductions (preview)
                             </div>
@@ -580,7 +580,7 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
                             </div>
                           </div>
 
-                          <div className="rounded-2xl border border-gray-200 bg-white p-4">
+                          <div className="rounded-lg border border-gray-200 bg-white p-3">
                             <div className="mb-2 font-medium text-gray-900">Inputs</div>
                             <div className="space-y-1">
                               <div className="flex justify-between">
@@ -613,7 +613,7 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
           </tbody>
 
           <tfoot className="bg-gray-50">
-            <tr className="font-semibold border-t border-gray-200">
+            <tr className="font-semibold border-t">
               <td className="p-3" colSpan={7}>
                 Totals (selected employees only)
               </td>
@@ -636,7 +636,7 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
       </div>
 
       {/* Schedule & dates */}
-      <div className="border-t border-gray-200 bg-gray-50/60">
+      <div className="border-t bg-gray-50/60">
         <div className="flex flex-col gap-4 p-5">
           <div>
             <h3 className="text-sm font-semibold text-gray-800">Schedule</h3>
@@ -647,7 +647,7 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
 
           {/* ✅ Holiday notice inside selected range */}
           {periodHolidays.length > 0 && (
-            <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-[11px] text-amber-900">
+            <div className="rounded-md border border-amber-100 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
               <p className="font-medium">This range includes Ontario public holidays:</p>
               <ul className="mt-1 list-disc pl-4">
                 {periodHolidays.map((h) => (
@@ -690,14 +690,14 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
 
           <div className="mt-1 flex items-center justify-between">
             <p className="text-[11px] text-gray-500">
-              Tip: &quot;Send paystub on&quot; can auto-set to 2 days before the pay date if left
-              blank.
+              Tip: &quot;Send paystub on&quot; can auto-set to 2 days before the pay date if left blank.
             </p>
 
             <button
               onClick={saveSelectedToPayHistory}
               disabled={submitting}
-              className="rounded-full bg-gray-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow transition-all
+              hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? "Saving..." : "Create Paystub & Save"}
             </button>

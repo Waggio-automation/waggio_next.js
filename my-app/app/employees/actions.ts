@@ -1,5 +1,6 @@
 "use server";
 
+import { DentalBenefitsCoverage } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getPrimaryCompany } from "@/lib/company";
 import { employeeInputSchema } from "./validators";
@@ -7,6 +8,17 @@ import { encryptSin } from "@/lib/crypto";
 import { revalidatePath } from "next/cache";
 
 export type CreateEmployeeState = { errors: Record<string, string> } | { success: true } | null;
+const dentalCoverageValues = new Set<DentalBenefitsCoverage>([
+  "NONE",
+  "EMPLOYEE_ONLY",
+  "EMPLOYEE_AND_SPOUSE",
+  "EMPLOYEE_AND_CHILDREN",
+  "EMPLOYEE_AND_FAMILY",
+]);
+
+function asString(value: FormDataEntryValue | null) {
+  return typeof value === "string" ? value : "";
+}
 
 export async function createEmployee(prevState: CreateEmployeeState, formData: FormData): Promise<CreateEmployeeState> {
   // 1) 폼 → 객체
@@ -32,6 +44,7 @@ export async function createEmployee(prevState: CreateEmployeeState, formData: F
       lastName : parsed.data.lastName,
       email    : parsed.data.email,
       sin      : encryptSin(parsed.data.sin),
+      dentalBenefitsCoverage: parsed.data.dentalBenefitsCoverage,
 
       paymentMethod: parsed.data.paymentMethod,
 
@@ -49,6 +62,8 @@ export async function createEmployee(prevState: CreateEmployeeState, formData: F
       payType : parsed.data.payType,
       hourlyRate: parsed.data.hourlyRate ?? null,
       salary    : parsed.data.salary ?? null,
+      rppDpspRegistrationNumber: parsed.data.rppDpspRegistrationNumber?.trim() || null,
+      pensionAdjustmentOverride: parsed.data.pensionAdjustmentOverride ?? null,
       vacationPay: parsed.data.vacationPay,
       bonus      : parsed.data.bonus,
       federalTD1 : parsed.data.federalTD1,
@@ -78,4 +93,32 @@ export async function createEmployee(prevState: CreateEmployeeState, formData: F
 
   revalidatePath("/employees"); // 목록 즉시 갱신
   return { success: true };
+}
+
+export async function updateEmployeeCraProfileAction(formData: FormData) {
+  const employeeId = BigInt(asString(formData.get("employeeId")));
+  const dentalBenefitsCoverage = asString(formData.get("dentalBenefitsCoverage"));
+  const rppDpspRegistrationNumber = asString(formData.get("rppDpspRegistrationNumber"));
+  const pensionAdjustmentValue = asString(formData.get("pensionAdjustmentOverride"));
+  const normalizedDentalCoverage = dentalCoverageValues.has(
+    dentalBenefitsCoverage as DentalBenefitsCoverage
+  )
+    ? (dentalBenefitsCoverage as DentalBenefitsCoverage)
+    : "NONE";
+
+  await prisma.employee.update({
+    where: { id: employeeId },
+    data: {
+      dentalBenefitsCoverage: normalizedDentalCoverage,
+      rppDpspRegistrationNumber: rppDpspRegistrationNumber.trim() || null,
+      pensionAdjustmentOverride: pensionAdjustmentValue.trim()
+        ? Number(pensionAdjustmentValue)
+        : null,
+    },
+  });
+
+  revalidatePath("/employees");
+  revalidatePath(`/employees/${employeeId.toString()}`);
+  revalidatePath("/cra");
+  revalidatePath("/cra/t4");
 }

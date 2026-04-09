@@ -10,6 +10,8 @@ export default function CreateEmployeeForm() {
   const errors = state && "errors" in state ? state.errors : {};
 
   const [sinValue, setSinValue] = useState("");
+  const [hasDentalBenefits, setHasDentalBenefits] = useState("no");
+  const [dentalCoverageScope, setDentalCoverageScope] = useState("EMPLOYEE_ONLY");
   const sinIsNineDigits = /^\d{9}$/.test(sinValue);
   const sinLuhnValid = sinIsNineDigits && (() => {
     const digits = sinValue.split("").map(Number);
@@ -22,30 +24,38 @@ export default function CreateEmployeeForm() {
     }, 0);
     return sum % 10 === 0;
   })();
+  const fieldClassName =
+    "w-full rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-gray-500";
+  const labelClassName = "flex flex-col gap-2 text-sm text-gray-700";
 
   return (
-    <section className="border rounded p-4 space-y-4">
-      <h2 className="text-lg font-medium">Create Employee</h2>
+    <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm space-y-5">
+      <div className="space-y-1">
+        <h2 className="text-xl font-semibold text-gray-900">Create Employee</h2>
+        <p className="text-sm text-gray-600">
+          Enter employee and payroll details below. The flow and validation remain unchanged.
+        </p>
+      </div>
       <form action={action} className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
-          <label className="flex flex-col gap-1">
+          <label className={labelClassName}>
             <span>First name *</span>
-            <input name="firstName" required className="border rounded p-2" />
+            <input name="firstName" required className={fieldClassName} />
           </label>
-          <label className="flex flex-col gap-1">
+          <label className={labelClassName}>
             <span>Last name *</span>
-            <input name="lastName" required className="border rounded p-2" />
+            <input name="lastName" required className={fieldClassName} />
           </label>
-          <label className="col-span-2 flex flex-col gap-1">
+          <label className={`${labelClassName} col-span-2`}>
             <span>Email *</span>
             <input
               type="email"
               name="email"
               required
-              className="border rounded p-2"
+              className={fieldClassName}
             />
           </label>
-          <label className="col-span-2 flex flex-col gap-1">
+          <label className={`${labelClassName} col-span-2`}>
             <span>SIN (9 digits) *</span>
             <input
               name="sin"
@@ -54,7 +64,7 @@ export default function CreateEmployeeForm() {
               required
               value={sinValue}
               onChange={(e) => setSinValue(e.target.value)}
-              className="border rounded p-2"
+              className={fieldClassName}
             />
             {sinValue.length > 0 && (
               sinLuhnValid
@@ -67,72 +77,103 @@ export default function CreateEmployeeForm() {
           </label>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <label className="flex flex-col gap-1">
+          <input
+            type="hidden"
+            name="dentalBenefitsCoverage"
+            value={hasDentalBenefits === "yes" ? dentalCoverageScope : "NONE"}
+          />
+          <label className={labelClassName}>
             <span>Address line 1 *</span>
-            <input name="addrLine1" required className="border rounded p-2" />
+            <input name="addrLine1" required className={fieldClassName} />
           </label>
-          <label className="flex flex-col gap-1">
+          <label className={labelClassName}>
             <span>Address line 2</span>
-            <input name="addrLine2" className="border rounded p-2" />
+            <input name="addrLine2" className={fieldClassName} />
           </label>
-          <label className="flex flex-col gap-1">
+          <label className={labelClassName}>
             <span>City *</span>
-            <input name="addrCity" required className="border rounded p-2" />
+            <input name="addrCity" required className={fieldClassName} />
           </label>
-          <label className="flex flex-col gap-1">
+          <label className={labelClassName}>
             <span>Province</span>
             <input
               name="addrProvince"
               defaultValue="ON"
-              className="border rounded p-2"
+              className={fieldClassName}
             />
           </label>
-          <label className="flex flex-col gap-1">
+          <label className={labelClassName}>
             <span>Postal Code *</span>
-            <input name="addrPostal" required className="border rounded p-2" />
+            <input name="addrPostal" required className={fieldClassName} />
           </label>
-          <label className="flex flex-col gap-1">
+          <label className={labelClassName}>
             <span>Country</span>
             <input
               name="addrCountry"
               defaultValue="CA"
-              className="border rounded p-2"
+              className={fieldClassName}
             />
           </label>
+          <label className={`${labelClassName} col-span-2`}>
+            <span>Does this employee have employer-offered dental benefits?</span>
+            <select
+              value={hasDentalBenefits}
+              onChange={(e) => setHasDentalBenefits(e.target.value)}
+              className={fieldClassName}
+            >
+              <option value="no">No</option>
+              <option value="yes">Yes</option>
+            </select>
+          </label>
+          {hasDentalBenefits === "yes" ? (
+            <label className={`${labelClassName} col-span-2`}>
+              <span>Who is covered under the dental benefits?</span>
+              <select
+                value={dentalCoverageScope}
+                onChange={(e) => setDentalCoverageScope(e.target.value)}
+                className={fieldClassName}
+              >
+                <option value="EMPLOYEE_ONLY">Employee only</option>
+                <option value="EMPLOYEE_AND_SPOUSE">Employee and spouse</option>
+                <option value="EMPLOYEE_AND_CHILDREN">Employee and dependent children</option>
+                <option value="EMPLOYEE_AND_FAMILY">Employee, spouse, and dependent children</option>
+              </select>
+            </label>
+          ) : null}
         </div>
         <div className="grid grid-cols-3 gap-4">
-          <label className="flex flex-col gap-1">
+          <label className={labelClassName}>
             <span>Birth date *</span>
             <input
               type="date"
               name="birthDate"
               required
-              className="border rounded p-2"
+              className={fieldClassName}
             />
           </label>
-          <label className="flex flex-col gap-1">
+          <label className={labelClassName}>
             <span>Employment type *</span>
-            <select name="employmentType" className="border rounded p-2">
+            <select name="employmentType" className={fieldClassName}>
               <option>FULL_TIME</option>
               <option>PART_TIME</option>
               <option>CONTRACTOR</option>
             </select>
           </label>
-          <label className="flex flex-col gap-1">
+          <label className={labelClassName}>
             <span>Hire date *</span>
             <input
               type="date"
               name="hireDate"
               required
-              className="border rounded p-2"
+              className={fieldClassName}
             />
           </label>
         </div>
-        <label className="flex flex-col gap-1">
+        <label className={labelClassName}>
           <span>Pay group</span>
           <select
             name="payGroup"
-            className="border rounded p-2"
+            className={fieldClassName}
             defaultValue="BI_WEEKLY"
           >
             <option>BI_WEEKLY</option>
@@ -142,51 +183,51 @@ export default function CreateEmployeeForm() {
         <PayTypeFields />
         <PaymentMethodFields />
         <div className="grid grid-cols-3 gap-4">
-          <label className="flex flex-col gap-1">
+          <label className={labelClassName}>
             <span>Vacation %</span>
             <input
               name="vacationPay"
               type="number"
               step="0.01"
               defaultValue={4}
-              className="border rounded p-2"
+              className={fieldClassName}
             />
           </label>
-          <label className="flex flex-col gap-1">
+          <label className={labelClassName}>
             <span>Bonus</span>
             <input
               name="bonus"
               type="number"
               step="0.01"
               defaultValue={0}
-              className="border rounded p-2"
+              className={fieldClassName}
             />
           </label>
           <div />
-          <label className="flex flex-col gap-1">
+          <label className={labelClassName}>
             <span>Federal TD1</span>
             <input
               name="federalTD1"
               type="number"
               step="0.01"
               defaultValue={15492}
-              className="border rounded p-2"
+              className={fieldClassName}
             />
           </label>
-          <label className="flex flex-col gap-1">
+          <label className={labelClassName}>
             <span>Provincial TD1</span>
             <input
               name="provincialTD1"
               type="number"
               step="0.01"
               defaultValue={12298}
-              className="border rounded p-2"
+              className={fieldClassName}
             />
           </label>
         </div>
         <button
           type="submit"
-          className="border rounded px-4 py-2 hover:bg-gray-50"
+          className="rounded-full bg-gray-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
         >
           Create
         </button>

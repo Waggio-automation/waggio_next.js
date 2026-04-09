@@ -1,0 +1,1 @@
+ALTER TYPE "public"."RemittanceStatus" ADD VALUE IF NOT EXISTS 'PARTIALLY_PAID';

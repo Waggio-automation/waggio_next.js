@@ -84,7 +84,9 @@ export default async function PayrollPage() {
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8 space-y-6">
-      <header className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm space-y-3">
+      {/* 🔹 상단 헤더 */}
+      <header className="space-y-3">
+        {/* 작고 심플한 백 링크 */}
         <Link
           href="/"
           className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700"
@@ -94,8 +96,7 @@ export default async function PayrollPage() {
         </Link>
 
         <div>
-          <p className="text-sm uppercase tracking-[0.2em] text-gray-500">Payroll</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-gray-900">
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-gray-900">
             Payroll Paystub Generator
           </h1>
           <p className="mt-1 text-sm sm:text-base text-gray-500">
@@ -104,8 +105,13 @@ export default async function PayrollPage() {
         </div>
       </header>
 
-      <PayrollStatusBlock runs={payrollStatusRows} />
-      <HoursTable employees={employees} />
+      <div className="-mx-4 sm:mx-0">
+        <PayrollStatusBlock runs={payrollStatusRows} />
+      </div>
+
+      <div className="-mx-4 sm:mx-0">
+        <HoursTable employees={employees} />
+      </div>
     </main>
   );
 }
