@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { getPrimaryCompany } from "@/lib/company";
 import { employeeInputSchema } from "./validators";
+import { encryptSin } from "@/lib/crypto";
 import { revalidatePath } from "next/cache";
 
 export type CreateEmployeeState = { errors: Record<string, string> } | { success: true } | null;
@@ -30,7 +31,7 @@ export async function createEmployee(prevState: CreateEmployeeState, formData: F
       firstName: parsed.data.firstName,
       lastName : parsed.data.lastName,
       email    : parsed.data.email,
-      sin      : parsed.data.sin,
+      sin      : encryptSin(parsed.data.sin),
 
       paymentMethod: parsed.data.paymentMethod,
 
