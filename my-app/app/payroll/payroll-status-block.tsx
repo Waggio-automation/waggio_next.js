@@ -69,11 +69,11 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
   }
 
   return (
-    <section className="rounded-xl border bg-white">
-      <div className="border-b p-4">
+    <section className="rounded-3xl border border-gray-200 bg-white shadow-sm">
+      <div className="border-b border-gray-200 p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold">Payroll status</h2>
+            <h2 className="text-xl font-semibold text-gray-900">Payroll status</h2>
             <p className="mt-1 text-sm text-gray-600">
               Processed run + sendAt reached -&gt; Trolley batch -&gt; Paying employees -&gt; Paid
             </p>
@@ -82,24 +82,24 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
             type="button"
             onClick={sendDuePayrollRuns}
             disabled={dispatchingDueRuns}
-            className="rounded border px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+            className="rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
           >
             {dispatchingDueRuns ? "Sending due runs..." : "Send due payroll"}
           </button>
         </div>
       </div>
 
-      <div className="p-4 space-y-3">
+      <div className="p-6 space-y-3">
         {runs.length === 0 ? (
           <p className="text-sm text-gray-500">No pay runs yet.</p>
         ) : (
           runs.map((run) => (
-            <div key={run.id} className="rounded-lg border p-3 space-y-2">
+            <div key={run.id} className="rounded-2xl border border-gray-200 px-4 py-3 space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="text-sm text-gray-700">
                   Payday: <span className="font-medium">{run.payday}</span>
                 </div>
-                <span className="rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">
+                <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
                   {PAYROLL_STATUS_LABELS[run.status]}
                 </span>
               </div>
@@ -111,7 +111,7 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
                     type="button"
                     onClick={() => retryFunding(run.id)}
                     disabled={retrying === run.id}
-                    className="rounded border px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                    className="rounded-full border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-60"
                   >
                     {retrying === run.id ? "Retrying..." : "Retry payout"}
                   </button>
@@ -123,7 +123,7 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
                   <p className="text-sm text-red-700">Employee payout failed</p>
                   <Link
                     href="/company-settings"
-                    className="rounded border px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                    className="rounded-full border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
                   >
                     Review company bank account
                   </Link>

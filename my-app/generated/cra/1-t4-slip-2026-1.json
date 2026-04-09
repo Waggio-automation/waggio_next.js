@@ -1,0 +1,15 @@
+{
+  "taxYear": 2026,
+  "employee": {
+    "id": "1",
+    "firstName": "Jiwon",
+    "lastName": "Ham",
+    "email": "jiwonhmm@gmail.com"
+  },
+  "boxes": {
+    "employmentIncome": 1167.08,
+    "incomeTaxDeducted": 234,
+    "cppContributionsEmployee": 69.44,
+    "eiPremiumsEmployee": 19.38
+  }
+}

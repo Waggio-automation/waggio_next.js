@@ -70,11 +70,123 @@ export default async function CraSettingsPage() {
             />
           </label>
           <label className="block">
+            <span className="mb-1 block text-sm text-gray-600">Submission language</span>
+            <select
+              name="submissionLanguageCode"
+              defaultValue={settings.submissionLanguageCode ?? "E"}
+              className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
+            >
+              <option value="E">English</option>
+              <option value="F">French</option>
+            </select>
+          </label>
+          <label className="block md:col-span-2">
+            <span className="mb-1 block text-sm text-gray-600">Employer address line 1</span>
+            <input
+              type="text"
+              name="addressLine1"
+              defaultValue={settings.addressLine1 ?? ""}
+              className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
+            />
+          </label>
+          <label className="block md:col-span-2">
+            <span className="mb-1 block text-sm text-gray-600">Employer address line 2</span>
+            <input
+              type="text"
+              name="addressLine2"
+              defaultValue={settings.addressLine2 ?? ""}
+              className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm text-gray-600">City</span>
+            <input
+              type="text"
+              name="city"
+              defaultValue={settings.city ?? ""}
+              className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm text-gray-600">Province code</span>
+            <input
+              type="text"
+              name="provinceCode"
+              defaultValue={settings.provinceCode ?? "ON"}
+              className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm text-gray-600">Postal code</span>
+            <input
+              type="text"
+              name="postalCode"
+              defaultValue={settings.postalCode ?? ""}
+              className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm text-gray-600">Country code</span>
+            <input
+              type="text"
+              name="countryCode"
+              defaultValue={settings.countryCode ?? "CAN"}
+              className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
+            />
+          </label>
+          <label className="block">
             <span className="mb-1 block text-sm text-gray-600">Reminder email</span>
             <input
               type="email"
               name="contactEmail"
               defaultValue={settings.contactEmail ?? ""}
+              className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm text-gray-600">CRA contact name</span>
+            <input
+              type="text"
+              name="contactName"
+              defaultValue={settings.contactName ?? ""}
+              className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm text-gray-600">CRA contact phone</span>
+            <input
+              type="text"
+              name="contactPhone"
+              defaultValue={settings.contactPhone ?? ""}
+              placeholder="4165551234"
+              className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm text-gray-600">Phone extension</span>
+            <input
+              type="text"
+              name="contactPhoneExtension"
+              defaultValue={settings.contactPhoneExtension ?? ""}
+              className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm text-gray-600">Transmitter account number</span>
+            <input
+              type="text"
+              name="transmitterAccountNumber"
+              defaultValue={settings.transmitterAccountNumber ?? ""}
+              placeholder="123456789RP0001"
+              className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm text-gray-600">Transmitter RepID</span>
+            <input
+              type="text"
+              name="transmitterRepId"
+              defaultValue={settings.transmitterRepId ?? ""}
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
             />
           </label>

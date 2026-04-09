@@ -4,6 +4,13 @@ export const EmploymentType = z.enum(["FULL_TIME","PART_TIME","CONTRACTOR"]);
 export const PayGroup = z.enum(["BI_WEEKLY","MONTHLY"]);
 export const PayType = z.enum(["HOURLY","SALARY"]);
 export const PaymentMethod = z.enum(["CHEQUE","DIRECT_DEPOSIT"]);
+export const DentalBenefitsCoverage = z.enum([
+  "NONE",
+  "EMPLOYEE_ONLY",
+  "EMPLOYEE_AND_SPOUSE",
+  "EMPLOYEE_AND_CHILDREN",
+  "EMPLOYEE_AND_FAMILY",
+]);
 
 const decimalLike = z.union([z.string(), z.number()]).transform((v) => {
   if (typeof v === "number") return v;
@@ -30,6 +37,7 @@ export const employeeInputSchema = z.object({
       return sum % 10 === 0;
     }, "SIN is invalid (fails Luhn check)"),
 
+  dentalBenefitsCoverage: DentalBenefitsCoverage.default("NONE"),
   addrLine1: z.string().min(1),
   addrLine2: z.string().optional(),
   addrCity : z.string().min(1),
@@ -45,6 +53,8 @@ export const employeeInputSchema = z.object({
   payType: PayType,
   hourlyRate: decimalLike.optional(),
   salary: decimalLike.optional(),
+  rppDpspRegistrationNumber: z.string().optional(),
+  pensionAdjustmentOverride: decimalLike.optional(),
 
   vacationPay: decimalLike.default(4),
   bonus: decimalLike.default(0),

@@ -18,6 +18,12 @@ function formatDate(value: Date | null) {
   }).format(value);
 }
 
+function documentLabel(fileName: string) {
+  if (fileName.endsWith(".xml")) return "Download XML";
+  if (fileName.endsWith(".pdf")) return "Download PDF";
+  return "Download";
+}
+
 export default async function T4ManagementPage() {
   const company = await requireCompanyAdminOrRedirect();
   const currentYear = new Date().getFullYear();
@@ -26,6 +32,11 @@ export default async function T4ManagementPage() {
     prisma.t4Summary.findMany({
       where: { companyId: company.id },
       orderBy: [{ taxYear: "desc" }],
+      include: {
+        documents: {
+          orderBy: { uploadedAt: "desc" },
+        },
+      },
     }),
     prisma.t4Slip.findMany({
       where: { companyId: company.id },
@@ -84,7 +95,8 @@ export default async function T4ManagementPage() {
                 <th className="py-3 pr-3">Employment income</th>
                 <th className="py-3 pr-3">Income tax</th>
                 <th className="py-3 pr-3">Status</th>
-                <th className="py-3">Generated</th>
+                <th className="py-3 pr-3">Generated</th>
+                <th className="py-3">Files</th>
               </tr>
             </thead>
             <tbody>
@@ -99,12 +111,26 @@ export default async function T4ManagementPage() {
                     {formatMoney(summary.totalIncomeTaxDeducted.toNumber())}
                   </td>
                   <td className="py-3 pr-3 text-gray-700">{summary.status}</td>
-                  <td className="py-3 text-gray-700">{formatDate(summary.generatedAt)}</td>
+                  <td className="py-3 pr-3 text-gray-700">{formatDate(summary.generatedAt)}</td>
+                  <td className="py-3 text-gray-700">
+                    <div className="flex flex-wrap gap-2">
+                      {summary.documents.map((document) => (
+                        <a
+                          key={document.id.toString()}
+                          href={`/api/documents/${document.id.toString()}`}
+                          className="rounded-full border border-gray-300 px-3 py-1 text-xs font-medium text-gray-900 hover:bg-gray-50"
+                        >
+                          {documentLabel(document.fileName)}
+                        </a>
+                      ))}
+                      {summary.documents.length === 0 ? "No file" : null}
+                    </div>
+                  </td>
                 </tr>
               ))}
               {summaries.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-sm text-gray-500">
+                  <td colSpan={7} className="py-8 text-center text-sm text-gray-500">
                     No T4 summary has been generated yet.
                   </td>
                 </tr>
@@ -149,7 +175,16 @@ export default async function T4ManagementPage() {
                     {formatMoney(slip.incomeTaxDeducted.toNumber())}
                   </td>
                   <td className="py-3 text-gray-700">
-                    {slip.documents[0]?.storagePath ?? "No file"}
+                    {slip.documents[0] ? (
+                      <a
+                        href={`/api/documents/${slip.documents[0].id.toString()}`}
+                        className="rounded-full border border-gray-300 px-3 py-1 text-xs font-medium text-gray-900 hover:bg-gray-50"
+                      >
+                        Download PDF
+                      </a>
+                    ) : (
+                      "No file"
+                    )}
                   </td>
                 </tr>
               ))}
