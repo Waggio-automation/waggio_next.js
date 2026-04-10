@@ -57,6 +57,10 @@ export default async function EmployeeDetailPage({
     notFound();
   }
 
+  const fieldClassName =
+    "w-full rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-gray-500";
+  const labelClassName = "flex flex-col gap-2 text-sm text-gray-700";
+
   return (
     <main className="max-w-4xl mx-auto p-6 space-y-6">
       <Link
@@ -67,22 +71,26 @@ export default async function EmployeeDetailPage({
         Back to Employees
       </Link>
 
-      <section className="rounded border p-4 space-y-2">
-        <h1 className="text-2xl font-semibold">
-          {employee.firstName} {employee.lastName}
-        </h1>
-        <p className="text-sm text-gray-600">{employee.email}</p>
-        <div className="grid grid-cols-2 gap-3 text-sm text-gray-600 pt-2">
-          <p>Employment: {employee.employmentType}</p>
-          <p>Pay type: {employee.payType}</p>
-          <p>Pay group: {employee.payGroup}</p>
-          <p>Created: {employee.createdAt.toLocaleDateString()}</p>
+      <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold text-gray-900">
+            {employee.firstName} {employee.lastName}
+          </h1>
+          <p className="text-sm text-gray-600">{employee.email}</p>
+        </div>
+        <div className="rounded-2xl bg-gray-50 px-4 py-3">
+          <div className="grid grid-cols-2 gap-3 text-sm text-gray-600">
+            <p>Employment: {employee.employmentType}</p>
+            <p>Pay type: {employee.payType}</p>
+            <p>Pay group: {employee.payGroup}</p>
+            <p>Created: {employee.createdAt.toLocaleDateString()}</p>
+          </div>
         </div>
       </section>
 
-      <section className="rounded border p-4 space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900">CRA / T4 profile</h2>
+      <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
+        <div className="space-y-2">
+          <h2 className="text-xl font-semibold text-gray-900">CRA / T4 profile</h2>
           <p className="text-sm text-gray-600">
             Manage year-end filing details here instead of entering CRA box codes directly.
           </p>
@@ -91,12 +99,12 @@ export default async function EmployeeDetailPage({
         <form action={updateEmployeeCraProfileAction} className="grid gap-4 md:grid-cols-2">
           <input type="hidden" name="employeeId" value={employee.id.toString()} />
 
-          <label className="flex flex-col gap-2 text-sm text-gray-700 md:col-span-2">
+          <label className={`${labelClassName} md:col-span-2`}>
             <span>Dental benefits coverage</span>
             <select
               name="dentalBenefitsCoverage"
               defaultValue={employee.dentalBenefitsCoverage}
-              className="rounded border px-3 py-2"
+              className={fieldClassName}
             >
               <option value="NONE">No employer-offered dental benefits</option>
               <option value="EMPLOYEE_ONLY">Employee only</option>
@@ -106,17 +114,17 @@ export default async function EmployeeDetailPage({
             </select>
           </label>
 
-          <label className="flex flex-col gap-2 text-sm text-gray-700">
+          <label className={labelClassName}>
             <span>RPP or DPSP registration number</span>
             <input
               type="text"
               name="rppDpspRegistrationNumber"
               defaultValue={employee.rppDpspRegistrationNumber ?? ""}
-              className="rounded border px-3 py-2"
+              className={fieldClassName}
             />
           </label>
 
-          <label className="flex flex-col gap-2 text-sm text-gray-700">
+          <label className={labelClassName}>
             <span>Pension adjustment override</span>
             <input
               type="number"
@@ -124,14 +132,14 @@ export default async function EmployeeDetailPage({
               step="0.01"
               min="0"
               defaultValue={employee.pensionAdjustmentOverride?.toString() ?? ""}
-              className="rounded border px-3 py-2"
+              className={fieldClassName}
             />
           </label>
 
           <div className="md:col-span-2 flex justify-end">
             <button
               type="submit"
-              className="rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+              className="rounded-full bg-gray-900 px-6 py-3 text-sm font-medium text-white transition hover:bg-gray-800"
             >
               Save CRA / T4 profile
             </button>

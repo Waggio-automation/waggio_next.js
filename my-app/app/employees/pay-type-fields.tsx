@@ -3,6 +3,10 @@ import { useState } from "react";
 
 export default function PayTypeFields() {
   const [pt, setPt] = useState<"HOURLY"|"SALARY">("HOURLY");
+  const fieldClassName =
+    "w-full rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-gray-500";
+  const labelClassName = "flex flex-col gap-2 text-sm text-gray-700";
+
   return (
     <div className="space-y-3">
       <div className="flex gap-6">
@@ -17,14 +21,26 @@ export default function PayTypeFields() {
       </div>
 
       {pt==="HOURLY" ? (
-        <label className="flex flex-col gap-1">
+        <label className={`${labelClassName} max-w-sm`}>
           <span>Hourly Rate *</span>
-          <input name="hourlyRate" type="number" step="0.01" required className="border rounded p-2"/>
+          <input
+            name="hourlyRate"
+            type="number"
+            step="0.01"
+            required
+            className={fieldClassName}
+          />
         </label>
       ) : (
-        <label className="flex flex-col gap-1">
+        <label className={`${labelClassName} max-w-sm`}>
           <span>Annual Salary *</span>
-          <input name="salary" type="number" step="0.01" required className="border rounded p-2"/>
+          <input
+            name="salary"
+            type="number"
+            step="0.01"
+            required
+            className={fieldClassName}
+          />
         </label>
       )}
     </div>

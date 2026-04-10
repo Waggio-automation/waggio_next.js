@@ -52,6 +52,37 @@ function fmtDate(value: Date) {
   return value.toISOString().slice(0, 10);
 }
 
+function getMissingT4SettingsFromSettings(settings: {
+  legalName: string | null;
+  payrollProgramAccount: string | null;
+  addressLine1: string | null;
+  city: string | null;
+  provinceCode: string | null;
+  postalCode: string | null;
+  contactName: string | null;
+  contactPhone: string | null;
+  contactEmail: string | null;
+  transmitterAccountNumber: string | null;
+  transmitterRepId: string | null;
+}) {
+  const contactPhone = splitPhoneNumber(settings.contactPhone);
+
+  return [
+    !settings.legalName && "legalName",
+    !settings.payrollProgramAccount && "payrollProgramAccount",
+    !settings.addressLine1 && "addressLine1",
+    !settings.city && "city",
+    !settings.provinceCode && "provinceCode",
+    !settings.postalCode && "postalCode",
+    !settings.contactName && "contactName",
+    !settings.contactPhone && "contactPhone",
+    !settings.contactEmail && "contactEmail",
+    !contactPhone && "contactPhone format",
+    !(settings.transmitterAccountNumber || settings.transmitterRepId) &&
+      "transmitterAccountNumber or transmitterRepId",
+  ].filter(Boolean);
+}
+
 function selectDashboardDocuments(
   documents: Array<{
     id: bigint;
@@ -312,6 +343,11 @@ export async function updateCompanyPayrollSettings(
   });
 
   return updated;
+}
+
+export async function getMissingT4FilingSettings(companyId: bigint) {
+  const settings = await getOrCreateCompanyPayrollSettings(companyId);
+  return getMissingT4SettingsFromSettings(settings);
 }
 
 export function calculateRemittanceDueDate(remitterType: RemitterType, periodEnd: Date) {
@@ -769,20 +805,7 @@ export async function generateT4Package(companyId: bigint, taxYear: number) {
   });
 
   const contactPhone = splitPhoneNumber(settings.contactPhone);
-  const missingSettings = [
-    !settings.legalName && "legalName",
-    !settings.payrollProgramAccount && "payrollProgramAccount",
-    !settings.addressLine1 && "addressLine1",
-    !settings.city && "city",
-    !settings.provinceCode && "provinceCode",
-    !settings.postalCode && "postalCode",
-    !settings.contactName && "contactName",
-    !settings.contactPhone && "contactPhone",
-    !settings.contactEmail && "contactEmail",
-    !contactPhone && "contactPhone format",
-    !(settings.transmitterAccountNumber || settings.transmitterRepId) &&
-      "transmitterAccountNumber or transmitterRepId",
-  ].filter(Boolean);
+  const missingSettings = getMissingT4SettingsFromSettings(settings);
 
   if (missingSettings.length > 0) {
     throw new Error(`CRA T4 filing settings incomplete: ${missingSettings.join(", ")}`);

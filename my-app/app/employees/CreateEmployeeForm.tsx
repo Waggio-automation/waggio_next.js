@@ -10,8 +10,6 @@ export default function CreateEmployeeForm() {
   const errors = state && "errors" in state ? state.errors : {};
 
   const [sinValue, setSinValue] = useState("");
-  const [hasDentalBenefits, setHasDentalBenefits] = useState("no");
-  const [dentalCoverageScope, setDentalCoverageScope] = useState("EMPLOYEE_ONLY");
   const sinIsNineDigits = /^\d{9}$/.test(sinValue);
   const sinLuhnValid = sinIsNineDigits && (() => {
     const digits = sinValue.split("").map(Number);
@@ -80,7 +78,7 @@ export default function CreateEmployeeForm() {
           <input
             type="hidden"
             name="dentalBenefitsCoverage"
-            value={hasDentalBenefits === "yes" ? dentalCoverageScope : "NONE"}
+            value="NONE"
           />
           <label className={labelClassName}>
             <span>Address line 1 *</span>
@@ -114,32 +112,6 @@ export default function CreateEmployeeForm() {
               className={fieldClassName}
             />
           </label>
-          <label className={`${labelClassName} col-span-2`}>
-            <span>Does this employee have employer-offered dental benefits?</span>
-            <select
-              value={hasDentalBenefits}
-              onChange={(e) => setHasDentalBenefits(e.target.value)}
-              className={fieldClassName}
-            >
-              <option value="no">No</option>
-              <option value="yes">Yes</option>
-            </select>
-          </label>
-          {hasDentalBenefits === "yes" ? (
-            <label className={`${labelClassName} col-span-2`}>
-              <span>Who is covered under the dental benefits?</span>
-              <select
-                value={dentalCoverageScope}
-                onChange={(e) => setDentalCoverageScope(e.target.value)}
-                className={fieldClassName}
-              >
-                <option value="EMPLOYEE_ONLY">Employee only</option>
-                <option value="EMPLOYEE_AND_SPOUSE">Employee and spouse</option>
-                <option value="EMPLOYEE_AND_CHILDREN">Employee and dependent children</option>
-                <option value="EMPLOYEE_AND_FAMILY">Employee, spouse, and dependent children</option>
-              </select>
-            </label>
-          ) : null}
         </div>
         <div className="grid grid-cols-3 gap-4">
           <label className={labelClassName}>
