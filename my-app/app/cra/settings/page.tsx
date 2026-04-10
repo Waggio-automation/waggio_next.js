@@ -1,6 +1,6 @@
 import { RemitterType } from "@prisma/client";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
-import { getOrCreateCompanyPayrollSettings } from "@/lib/cra";
+import { getMissingT4FilingSettings, getOrCreateCompanyPayrollSettings } from "@/lib/cra";
 import { saveCraSettingsAction } from "../actions";
 
 const remitterTypeOptions: Array<{ value: RemitterType; label: string; help: string }> = [
@@ -26,9 +26,19 @@ const remitterTypeOptions: Array<{ value: RemitterType; label: string; help: str
   },
 ];
 
-export default async function CraSettingsPage() {
+export default async function CraSettingsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ error?: string; success?: string }>;
+}) {
   const company = await requireCompanyAdminOrRedirect();
-  const settings = await getOrCreateCompanyPayrollSettings(company.id);
+  const [settings, missingT4Settings, resolvedSearchParams] = await Promise.all([
+    getOrCreateCompanyPayrollSettings(company.id),
+    getMissingT4FilingSettings(company.id),
+    searchParams ?? Promise.resolve({}),
+  ]);
+  const showT4Error = resolvedSearchParams.error === "t4-settings-incomplete";
+  const showSuccessMessage = resolvedSearchParams.success === "saved";
 
   return (
     <div className="space-y-6">
@@ -39,6 +49,16 @@ export default async function CraSettingsPage() {
             These settings drive due dates, reminders, remittance grouping, and year-end documents.
           </p>
         </div>
+        {showT4Error ? (
+          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            T4 generation is blocked until these fields are filled: {missingT4Settings.join(", ")}.
+          </div>
+        ) : null}
+        {showSuccessMessage ? (
+          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+            CRA settings saved successfully.
+          </div>
+        ) : null}
 
         <form action={saveCraSettingsAction} className="mt-6 grid gap-4 md:grid-cols-2">
           <label className="block">
