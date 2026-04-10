@@ -1,10 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { RemitterType } from "@prisma/client";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 import {
   generateT4Package,
+  getMissingT4FilingSettings,
   recordRemittancePayment,
   syncRemittancesForCompany,
   updateCompanyPayrollSettings,
@@ -48,6 +50,7 @@ export async function saveCraSettingsAction(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/cra");
   revalidatePath("/cra/settings");
+  redirect("/cra/settings?success=saved");
 }
 
 export async function syncRemittancesAction() {
@@ -78,6 +81,12 @@ export async function markRemittancePaidAction(formData: FormData) {
 export async function generateT4Action(formData: FormData) {
   const company = await requireCompanyAdminOrRedirect();
   const taxYear = Number(asString(formData.get("taxYear")) || new Date().getFullYear());
+  const missingSettings = await getMissingT4FilingSettings(company.id);
+
+  if (missingSettings.length > 0) {
+    redirect("/cra/settings?error=t4-settings-incomplete");
+  }
+
   await generateT4Package(company.id, taxYear);
   revalidatePath("/");
   revalidatePath("/cra");
