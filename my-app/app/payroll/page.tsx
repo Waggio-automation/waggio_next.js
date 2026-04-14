@@ -42,6 +42,7 @@ export default async function PayrollPage() {
       select: {
         id: true,
         payDate: true,
+        updatedAt: true,
         status: true,
         failureType: true,
         failureReason: true,
@@ -70,6 +71,7 @@ export default async function PayrollPage() {
     return {
       id: run.id.toString(),
       payday: run.payDate.toLocaleDateString(),
+      payDateIso: run.payDate.toISOString(),
       status: toPayrollStatusUi(run.status),
       failureType:
         run.failureType === "FUNDING"
