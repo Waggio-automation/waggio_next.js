@@ -7,16 +7,43 @@ import { PAYROLL_STATUS_LABELS } from "@/lib/payments/payroll-status";
 type RunRow = {
   id: string;
   payday: string;
+  payDateIso: string;
   status: "scheduled" | "processed" | "funding" | "funds_confirmed" | "paying" | "paid" | "failed";
   failureType: "funding" | "employee" | null;
   failureReason: string | null;
   employeeIssueId?: string | null;
 };
 
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_DEFAULT_COMPLETED_RUNS = 3;
+
+function isHideableCompletedStatus(status: RunRow["status"]) {
+  return status === "paid" || status === "processed";
+}
+
 export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
   const [retrying, setRetrying] = useState<string | null>(null);
   const [dispatchingDueRuns, setDispatchingDueRuns] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [showCompletedRuns, setShowCompletedRuns] = useState(false);
+
+  const now = Date.now();
+  const activeRuns = runs.filter((run) => !isHideableCompletedStatus(run.status));
+  const completedRuns = runs.filter((run) => isHideableCompletedStatus(run.status));
+  const defaultVisibleCompletedRuns = completedRuns
+    .filter((run) => {
+    const payDateMs = new Date(run.payDateIso).getTime();
+    if (Number.isNaN(payDateMs)) {
+      return true;
+    }
+
+      return payDateMs <= now && now - payDateMs < ONE_DAY_MS;
+    })
+    .slice(0, MAX_DEFAULT_COMPLETED_RUNS);
+  const visibleRuns = showCompletedRuns
+    ? runs
+    : [...activeRuns, ...defaultVisibleCompletedRuns];
+  const hiddenCompletedRunsCount = completedRuns.length - defaultVisibleCompletedRuns.length;
 
   async function retryFunding(runId: string) {
     try {
@@ -93,7 +120,7 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
         {runs.length === 0 ? (
           <p className="text-sm text-gray-500">No pay runs yet.</p>
         ) : (
-          runs.map((run) => (
+          visibleRuns.map((run) => (
             <div key={run.id} className="rounded-2xl border border-gray-200 px-4 py-3 space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="text-sm text-gray-700">
@@ -136,6 +163,18 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
             </div>
           ))
         )}
+
+        {hiddenCompletedRunsCount > 0 ? (
+          <button
+            type="button"
+            onClick={() => setShowCompletedRuns((current) => !current)}
+            className="rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            {showCompletedRuns
+              ? "Hide completed runs"
+              : `Show completed runs (${hiddenCompletedRunsCount})`}
+          </button>
+        ) : null}
 
         {message ? <p className="text-sm text-gray-600">{message}</p> : null}
       </div>
