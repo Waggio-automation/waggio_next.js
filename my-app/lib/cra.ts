@@ -52,6 +52,15 @@ function fmtDate(value: Date) {
   return value.toISOString().slice(0, 10);
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function getMissingT4SettingsFromSettings(settings: {
   legalName: string | null;
   payrollProgramAccount: string | null;
@@ -244,7 +253,10 @@ async function renderPdfBuffer(browser: Browser, html: string) {
   const page = await browser.newPage();
 
   try {
-    await page.setContent(html, { waitUntil: "networkidle0" });
+    await page.setContent(html, {
+      waitUntil: "domcontentloaded",
+      timeout: 15_000,
+    });
     return Buffer.from(await page.pdf({
       format: "A4",
       printBackground: true,
@@ -258,6 +270,159 @@ async function renderPdfBuffer(browser: Browser, html: string) {
   } finally {
     await page.close();
   }
+}
+
+function renderRemittanceReportHtml(input: {
+  label: string;
+  periodStart: string;
+  periodEnd: string;
+  dueDate: string;
+  employeeCount: number;
+  totals: {
+    incomeTax: number;
+    cppEmployee: number;
+    cppEmployer: number;
+    eiEmployee: number;
+    eiEmployer: number;
+    totalPayable: number;
+  };
+}) {
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat("en-CA", {
+      style: "currency",
+      currency: "CAD",
+    }).format(value);
+
+  const rows = [
+    ["Income tax withheld", formatCurrency(input.totals.incomeTax)],
+    ["CPP employee", formatCurrency(input.totals.cppEmployee)],
+    ["CPP employer", formatCurrency(input.totals.cppEmployer)],
+    ["EI employee", formatCurrency(input.totals.eiEmployee)],
+    ["EI employer", formatCurrency(input.totals.eiEmployer)],
+  ]
+    .map(
+      ([label, value]) => `
+        <tr>
+          <td>${escapeHtml(label)}</td>
+          <td>${escapeHtml(value)}</td>
+        </tr>
+      `
+    )
+    .join("");
+
+  return `<!doctype html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8" />
+      <title>${escapeHtml(input.label)} remittance report</title>
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          color: #111827;
+          margin: 0;
+          padding: 32px;
+        }
+        .page {
+          border: 1px solid #e5e7eb;
+          border-radius: 24px;
+          padding: 32px;
+        }
+        h1 {
+          font-size: 28px;
+          margin: 0 0 8px;
+        }
+        .subtitle {
+          color: #4b5563;
+          margin: 0 0 24px;
+        }
+        .grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 12px;
+          margin-bottom: 24px;
+        }
+        .card {
+          background: #f9fafb;
+          border-radius: 16px;
+          padding: 16px;
+        }
+        .label {
+          color: #6b7280;
+          font-size: 12px;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          margin-bottom: 8px;
+        }
+        .value {
+          font-size: 18px;
+          font-weight: 700;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 12px;
+        }
+        th, td {
+          border-bottom: 1px solid #e5e7eb;
+          padding: 12px 0;
+          text-align: left;
+          font-size: 14px;
+        }
+        th {
+          color: #6b7280;
+          font-size: 12px;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+        }
+        .total-row td {
+          font-weight: 700;
+          border-bottom: 0;
+          padding-top: 16px;
+        }
+      </style>
+    </head>
+    <body>
+      <main class="page">
+        <h1>${escapeHtml(input.label)} remittance report</h1>
+        <p class="subtitle">Payroll remittance filing summary</p>
+        <section class="grid">
+          <div class="card">
+            <div class="label">Period</div>
+            <div class="value">${escapeHtml(input.periodStart)} to ${escapeHtml(input.periodEnd)}</div>
+          </div>
+          <div class="card">
+            <div class="label">CRA due date</div>
+            <div class="value">${escapeHtml(input.dueDate)}</div>
+          </div>
+          <div class="card">
+            <div class="label">Employees included</div>
+            <div class="value">${escapeHtml(String(input.employeeCount))}</div>
+          </div>
+          <div class="card">
+            <div class="label">Total payable</div>
+            <div class="value">${escapeHtml(formatCurrency(input.totals.totalPayable))}</div>
+          </div>
+        </section>
+        <section>
+          <table>
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows}
+              <tr class="total-row">
+                <td>Total payable</td>
+                <td>${escapeHtml(formatCurrency(input.totals.totalPayable))}</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </main>
+    </body>
+  </html>`;
 }
 
 export async function getOrCreateCompanyPayrollSettings(companyId: bigint) {
@@ -485,140 +650,153 @@ export async function syncRemittancesForCompany(companyId: bigint) {
   });
 
   const periods = buildPeriods(payHistory, settings.remitterType);
+  let browser: Browser | null = null;
 
-  for (const period of periods) {
-    const incomeTax = period.rows.reduce((sum, row) => sum.add(row.ded_income_tax), ZERO);
-    const cppEmployee = period.rows.reduce((sum, row) => sum.add(row.ded_cpp), ZERO);
-    const eiEmployee = period.rows.reduce((sum, row) => sum.add(row.ded_ei), ZERO);
-    const cppEmployer = roundMoney(cppEmployee.mul(CPP_RATE).div(CPP_RATE));
-    const eiEmployer = roundMoney(eiEmployee.mul(EI_RATE * 1.4).div(EI_RATE));
-    const totalPayable = roundMoney(addMoney(incomeTax, cppEmployee, cppEmployer, eiEmployee, eiEmployer));
+  try {
+    for (const period of periods) {
+      const incomeTax = period.rows.reduce((sum, row) => sum.add(row.ded_income_tax), ZERO);
+      const cppEmployee = period.rows.reduce((sum, row) => sum.add(row.ded_cpp), ZERO);
+      const eiEmployee = period.rows.reduce((sum, row) => sum.add(row.ded_ei), ZERO);
+      const cppEmployer = roundMoney(cppEmployee.mul(CPP_RATE).div(CPP_RATE));
+      const eiEmployer = roundMoney(eiEmployee.mul(EI_RATE * 1.4).div(EI_RATE));
+      const totalPayable = roundMoney(addMoney(incomeTax, cppEmployee, cppEmployer, eiEmployee, eiEmployer));
 
-    const employeeCount = new Set(period.rows.map((row) => row.employeeId.toString())).size;
-    const dueDate = calculateRemittanceDueDate(settings.remitterType, period.end);
+      const employeeCount = new Set(period.rows.map((row) => row.employeeId.toString())).size;
+      const dueDate = calculateRemittanceDueDate(settings.remitterType, period.end);
 
-    const remittance = await prisma.remittance.upsert({
-      where: {
-        companyId_periodStart_periodEnd: {
+      const remittance = await prisma.remittance.upsert({
+        where: {
+          companyId_periodStart_periodEnd: {
+            companyId,
+            periodStart: period.start,
+            periodEnd: period.end,
+          },
+        },
+        update: {
+          remitterTypeSnapshot: settings.remitterType,
+          dueDate,
+          employeeCount,
+          totalIncomeTax: roundMoney(incomeTax),
+          totalCppEmployee: roundMoney(cppEmployee),
+          totalCppEmployer: roundMoney(cppEmployer),
+          totalEiEmployee: roundMoney(eiEmployee),
+          totalEiEmployer: roundMoney(eiEmployer),
+          totalPayable,
+        },
+        create: {
           companyId,
           periodStart: period.start,
           periodEnd: period.end,
+          remitterTypeSnapshot: settings.remitterType,
+          dueDate,
+          employeeCount,
+          totalIncomeTax: roundMoney(incomeTax),
+          totalCppEmployee: roundMoney(cppEmployee),
+          totalCppEmployer: roundMoney(cppEmployer),
+          totalEiEmployee: roundMoney(eiEmployee),
+          totalEiEmployer: roundMoney(eiEmployer),
+          totalPayable,
         },
-      },
-      update: {
-        remitterTypeSnapshot: settings.remitterType,
-        dueDate,
-        employeeCount,
-        totalIncomeTax: roundMoney(incomeTax),
-        totalCppEmployee: roundMoney(cppEmployee),
-        totalCppEmployer: roundMoney(cppEmployer),
-        totalEiEmployee: roundMoney(eiEmployee),
-        totalEiEmployer: roundMoney(eiEmployer),
-        totalPayable,
-      },
-      create: {
-        companyId,
-        periodStart: period.start,
-        periodEnd: period.end,
-        remitterTypeSnapshot: settings.remitterType,
-        dueDate,
-        employeeCount,
-        totalIncomeTax: roundMoney(incomeTax),
-        totalCppEmployee: roundMoney(cppEmployee),
-        totalCppEmployer: roundMoney(cppEmployer),
-        totalEiEmployee: roundMoney(eiEmployee),
-        totalEiEmployer: roundMoney(eiEmployer),
-        totalPayable,
-      },
-    });
-
-    const recordedPayments = await prisma.remittancePayment.findMany({
-      where: {
-        remittanceId: remittance.id,
-        status: "RECORDED",
-      },
-      orderBy: { paymentDate: "desc" },
-    });
-
-    const totalPaid = sumRecordedPayments(recordedPayments);
-    const paidInFull = totalPaid.greaterThanOrEqualTo(totalPayable) && totalPayable.greaterThan(0);
-
-    await prisma.remittance.update({
-      where: { id: remittance.id },
-      data: {
-        paidAt: paidInFull ? recordedPayments[0]?.paymentDate ?? null : null,
-        status: deriveRemittanceStatus(dueDate, totalPayable, totalPaid),
-      },
-    });
-
-    await prisma.remittancePayHistory.deleteMany({
-      where: { remittanceId: remittance.id },
-    });
-
-    if (period.rows.length > 0) {
-      await prisma.remittancePayHistory.createMany({
-        data: period.rows.map((row) => ({
-          remittanceId: remittance.id,
-          payHistoryId: row.id,
-        })),
-        skipDuplicates: true,
       });
+
+      const recordedPayments = await prisma.remittancePayment.findMany({
+        where: {
+          remittanceId: remittance.id,
+          status: "RECORDED",
+        },
+        orderBy: { paymentDate: "desc" },
+      });
+
+      const totalPaid = sumRecordedPayments(recordedPayments);
+      const paidInFull = totalPaid.greaterThanOrEqualTo(totalPayable) && totalPayable.greaterThan(0);
+
+      await prisma.remittance.update({
+        where: { id: remittance.id },
+        data: {
+          paidAt: paidInFull ? recordedPayments[0]?.paymentDate ?? null : null,
+          status: deriveRemittanceStatus(dueDate, totalPayable, totalPaid),
+        },
+      });
+
+      await prisma.remittancePayHistory.deleteMany({
+        where: { remittanceId: remittance.id },
+      });
+
+      if (period.rows.length > 0) {
+        await prisma.remittancePayHistory.createMany({
+          data: period.rows.map((row) => ({
+            remittanceId: remittance.id,
+            payHistoryId: row.id,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      const reportPayload = {
+        label: period.label,
+        periodStart: fmtDate(period.start),
+        periodEnd: fmtDate(period.end),
+        dueDate: fmtDate(dueDate),
+        employeeCount,
+        totals: {
+          incomeTax: roundMoney(incomeTax).toNumber(),
+          cppEmployee: roundMoney(cppEmployee).toNumber(),
+          cppEmployer: roundMoney(cppEmployer).toNumber(),
+          eiEmployee: roundMoney(eiEmployee).toNumber(),
+          eiEmployer: roundMoney(eiEmployer).toNumber(),
+          totalPayable: totalPayable.toNumber(),
+        },
+      };
+
+      if (!browser) {
+        browser = await puppeteer.launch({ headless: true });
+      }
+
+      const reportPdfBuffer = await renderPdfBuffer(browser, renderRemittanceReportHtml(reportPayload));
+      const storagePath = await writeGeneratedFile({
+        companyId,
+        fileName: `remittance-${fmtDate(period.start)}-${fmtDate(period.end)}.pdf`,
+        contents: reportPdfBuffer,
+      });
+
+      await prisma.document.deleteMany({
+        where: {
+          remittanceId: remittance.id,
+          documentType: "REMITTANCE_REPORT",
+        },
+      });
+
+      await prisma.document.create({
+        data: {
+          companyId,
+          documentType: "REMITTANCE_REPORT",
+          fileName: path.basename(storagePath),
+          storagePath,
+          mimeType: "application/pdf",
+          linkedEntityType: "REMITTANCE",
+          linkedEntityId: remittance.id,
+          remittanceId: remittance.id,
+        },
+      });
+
+      await syncReminderEvents(companyId, remittance.id, dueDate, settings.preDueReminderDays);
     }
 
-    const reportPayload = {
-      label: period.label,
-      periodStart: fmtDate(period.start),
-      periodEnd: fmtDate(period.end),
-      dueDate: fmtDate(dueDate),
-      employeeCount,
-      totals: {
-        incomeTax: roundMoney(incomeTax).toNumber(),
-        cppEmployee: roundMoney(cppEmployee).toNumber(),
-        cppEmployer: roundMoney(cppEmployer).toNumber(),
-        eiEmployee: roundMoney(eiEmployee).toNumber(),
-        eiEmployer: roundMoney(eiEmployer).toNumber(),
-        totalPayable: totalPayable.toNumber(),
-      },
-    };
-
-    const storagePath = await writeGeneratedFile({
-      companyId,
-      fileName: `remittance-${fmtDate(period.start)}-${fmtDate(period.end)}.json`,
-      contents: JSON.stringify(reportPayload, null, 2),
-    });
-
-    await prisma.document.deleteMany({
-      where: {
-        remittanceId: remittance.id,
-        documentType: "REMITTANCE_REPORT",
+    return prisma.remittance.findMany({
+      where: { companyId },
+      orderBy: [{ periodStart: "desc" }],
+      include: {
+        payments: {
+          where: { status: "RECORDED" },
+          orderBy: { paymentDate: "desc" },
+        },
       },
     });
-
-    await prisma.document.create({
-      data: {
-        companyId,
-        documentType: "REMITTANCE_REPORT",
-        fileName: path.basename(storagePath),
-        storagePath,
-        linkedEntityType: "REMITTANCE",
-        linkedEntityId: remittance.id,
-        remittanceId: remittance.id,
-      },
-    });
-
-    await syncReminderEvents(companyId, remittance.id, dueDate, settings.preDueReminderDays);
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
   }
-
-  return prisma.remittance.findMany({
-    where: { companyId },
-    orderBy: [{ periodStart: "desc" }],
-    include: {
-      payments: {
-        where: { status: "RECORDED" },
-        orderBy: { paymentDate: "desc" },
-      },
-    },
-  });
 }
 
 async function syncReminderEvents(
