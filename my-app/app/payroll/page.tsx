@@ -42,6 +42,7 @@ export default async function PayrollPage() {
       select: {
         id: true,
         payDate: true,
+        updatedAt: true,
         status: true,
         failureType: true,
         failureReason: true,
@@ -70,6 +71,7 @@ export default async function PayrollPage() {
     return {
       id: run.id.toString(),
       payday: run.payDate.toLocaleDateString(),
+      payDateIso: run.payDate.toISOString(),
       status: toPayrollStatusUi(run.status),
       failureType:
         run.failureType === "FUNDING"
@@ -87,7 +89,7 @@ export default async function PayrollPage() {
       <header className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm space-y-3">
         <Link
           href="/"
-          className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700"
+          className="inline-flex items-center rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
         >
           <span className="mr-1 text-lg">←</span>
           Back to Home

@@ -46,7 +46,7 @@ export async function createEmployee(prevState: CreateEmployeeState, formData: F
       sin      : encryptSin(parsed.data.sin),
       dentalBenefitsCoverage: parsed.data.dentalBenefitsCoverage,
 
-      paymentMethod: parsed.data.paymentMethod,
+      paymentMethod: "DIRECT_DEPOSIT",
 
       addrLine1: parsed.data.addrLine1,
       addrLine2: parsed.data.addrLine2 || null,
