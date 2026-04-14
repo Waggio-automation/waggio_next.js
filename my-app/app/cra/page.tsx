@@ -30,13 +30,14 @@ function formatDashboardDocumentLabel(document: {
   documentType: string;
   fileName: string;
   taxYear: number | null;
+  mimeType: string;
 }) {
   if (document.documentType === "T4_SUMMARY") {
     return document.taxYear ? `${document.taxYear} T4 summary` : "T4 summary";
   }
 
   if (document.documentType === "REMITTANCE_REPORT") {
-    const match = document.fileName.match(/remittance-(\d{4}-\d{2})-\d{2}-\d{4}-\d{2}-\d{2}\.json$/);
+    const match = document.fileName.match(/remittance-(\d{4}-\d{2})-\d{2}-\d{4}-\d{2}-\d{2}\.(pdf|json)$/);
     if (match) {
       return `${formatMonthYear(match[1])} remittance report`;
     }
@@ -61,6 +62,13 @@ function formatDashboardDocumentMeta(document: {
   return document.documentType.replaceAll("_", " ");
 }
 
+function canPreviewDocument(document: {
+  mimeType: string;
+  fileName: string;
+}) {
+  return document.mimeType === "application/pdf" || document.fileName.toLowerCase().endsWith(".pdf");
+}
+
 function badgeTone(status: string) {
   if (status === "PAID") return "bg-emerald-100 text-emerald-800";
   if (status === "PARTIALLY_PAID") return "bg-sky-100 text-sky-800";
@@ -70,6 +78,22 @@ function badgeTone(status: string) {
 
 function formatStatusLabel(status: string) {
   return status.replaceAll("_", " ");
+}
+
+function getAuditLogHref(entry: {
+  action: string;
+  targetType: string;
+  targetId: string;
+}) {
+  if (entry.action === "REMITTANCE_MARKED_PAID" && entry.targetType === "Remittance") {
+    return `/cra/remittances/${entry.targetId}`;
+  }
+
+  if (entry.action === "T4_PACKAGE_GENERATED" && entry.targetType === "T4Summary") {
+    return "/cra/t4";
+  }
+
+  return null;
 }
 
 export default async function CraDashboardPage() {
@@ -229,12 +253,35 @@ export default async function CraDashboardPage() {
           <h2 className="text-xl font-semibold text-gray-900">Document archive</h2>
           <div className="mt-4 space-y-3">
             {dashboard.documents.map((document) => (
-              <div key={document.id.toString()} className="flex items-center justify-between gap-4 rounded-2xl border border-gray-200 px-4 py-3">
+              <div
+                key={document.id.toString()}
+                className="flex items-center justify-between gap-4 rounded-2xl border border-gray-200 px-4 py-3"
+              >
                 <div>
                   <p className="text-sm font-medium text-gray-900">{formatDashboardDocumentLabel(document)}</p>
                   <p className="text-xs text-gray-500">{formatDashboardDocumentMeta(document)}</p>
                 </div>
-                <span className="text-xs text-gray-500">{formatDate(document.uploadedAt)}</span>
+                <div className="text-right">
+                  <span className="block text-xs text-gray-500">{formatDate(document.uploadedAt)}</span>
+                  <div className="mt-2 flex items-center justify-end gap-2">
+                    {canPreviewDocument(document) ? (
+                      <a
+                        href={`/api/documents/${document.id.toString()}?disposition=inline`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-full border border-gray-300 px-3 py-1 text-xs font-medium text-gray-900 hover:bg-gray-50"
+                      >
+                        View
+                      </a>
+                    ) : null}
+                    <a
+                      href={`/api/documents/${document.id.toString()}`}
+                      className="rounded-full border border-gray-300 px-3 py-1 text-xs font-medium text-gray-900 hover:bg-gray-50"
+                    >
+                      Download
+                    </a>
+                  </div>
+                </div>
               </div>
             ))}
             {dashboard.documents.length === 0 ? (
@@ -246,14 +293,38 @@ export default async function CraDashboardPage() {
         <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
           <h2 className="text-xl font-semibold text-gray-900">Activity log</h2>
           <div className="mt-4 space-y-3">
-            {dashboard.auditLogs.map((entry) => (
-              <div key={entry.id.toString()} className="rounded-2xl bg-gray-50 px-4 py-3">
-                <p className="text-sm font-medium text-gray-900">{entry.action.replaceAll("_", " ")}</p>
-                <p className="mt-1 text-xs text-gray-500">
-                  {entry.targetType} #{entry.targetId} on {formatDate(entry.createdAt)}
-                </p>
-              </div>
-            ))}
+            {dashboard.auditLogs.map((entry) => {
+              const href = getAuditLogHref(entry);
+
+              if (!href) {
+                return (
+                  <div key={entry.id.toString()} className="rounded-2xl bg-gray-50 px-4 py-3">
+                    <p className="text-sm font-medium text-gray-900">{entry.action.replaceAll("_", " ")}</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {entry.targetType} #{entry.targetId} on {formatDate(entry.createdAt)}
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <Link
+                  key={entry.id.toString()}
+                  href={href}
+                  className="block rounded-2xl bg-gray-50 px-4 py-3 transition hover:bg-gray-100"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{entry.action.replaceAll("_", " ")}</p>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {entry.targetType} #{entry.targetId} on {formatDate(entry.createdAt)}
+                      </p>
+                    </div>
+                    <span className="text-xs font-medium text-gray-900">Open</span>
+                  </div>
+                </Link>
+              );
+            })}
             {dashboard.auditLogs.length === 0 ? (
               <p className="text-sm text-gray-500">Payment and generation actions will be tracked here.</p>
             ) : null}
