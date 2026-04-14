@@ -61,7 +61,7 @@ export const employeeInputSchema = z.object({
   federalTD1: decimalLike.default(15492),
   provincialTD1: decimalLike.default(12298),
 
-  paymentMethod: PaymentMethod.default("CHEQUE"),
+  paymentMethod: PaymentMethod.default("DIRECT_DEPOSIT"),
 })
 .superRefine((data, ctx) => {
   if (data.payType === "HOURLY") {
