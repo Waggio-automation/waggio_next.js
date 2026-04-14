@@ -26,6 +26,10 @@ function formatStatusLabel(status: string) {
   return status.replaceAll("_", " ");
 }
 
+function canPreviewDocument(document: { mimeType: string; fileName: string }) {
+  return document.mimeType === "application/pdf" || document.fileName.toLowerCase().endsWith(".pdf");
+}
+
 function getUniqueRecordedPayments<
   T extends {
     id: bigint;
@@ -289,9 +293,29 @@ export default async function RemittanceDetailPage({
           <h3 className="text-lg font-semibold text-gray-900">Documents</h3>
           <div className="mt-4 space-y-3">
             {remittance.documents.map((document) => (
-              <div key={document.id.toString()} className="rounded-2xl bg-gray-50 px-4 py-3">
-                <p className="text-sm font-medium text-gray-900">{document.fileName}</p>
-                <p className="mt-1 text-xs text-gray-500">{document.storagePath}</p>
+              <div key={document.id.toString()} className="flex items-center justify-between gap-4 rounded-2xl bg-gray-50 px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">{document.fileName}</p>
+                  <p className="mt-1 text-xs text-gray-500">{formatDate(document.uploadedAt)}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {canPreviewDocument(document) ? (
+                    <a
+                      href={`/api/documents/${document.id.toString()}?disposition=inline`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-full border border-gray-300 px-3 py-1 text-xs font-medium text-gray-900 hover:bg-white"
+                    >
+                      View
+                    </a>
+                  ) : null}
+                  <a
+                    href={`/api/documents/${document.id.toString()}`}
+                    className="rounded-full border border-gray-300 px-3 py-1 text-xs font-medium text-gray-900 hover:bg-white"
+                  >
+                    Download
+                  </a>
+                </div>
               </div>
             ))}
             {remittance.documents.length === 0 ? (

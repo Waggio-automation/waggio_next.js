@@ -7,11 +7,12 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const company = await requireCompanyAdminOrRedirect();
   const { id } = await params;
+  const disposition = new URL(req.url).searchParams.get("disposition");
 
   let documentId: bigint;
   try {
@@ -39,10 +40,12 @@ export async function GET(
     return NextResponse.json({ error: "Stored file not found" }, { status: 404 });
   }
 
+  const canInline = disposition === "inline" && document.mimeType === "application/pdf";
+
   return new NextResponse(new Uint8Array(fileBuffer), {
     headers: {
       "Content-Type": document.mimeType,
-      "Content-Disposition": `attachment; filename="${document.fileName}"`,
+      "Content-Disposition": `${canInline ? "inline" : "attachment"}; filename="${document.fileName}"`,
       "Cache-Control": "private, no-store",
     },
   });
