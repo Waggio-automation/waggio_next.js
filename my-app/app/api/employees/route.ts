@@ -31,6 +31,7 @@ export async function POST(req: NextRequest) {
     const created = await prisma.employee.create({
       data: {
         ...parsed,
+        paymentMethod: "DIRECT_DEPOSIT",
         dentalBenefitsCoverage: parsed.dentalBenefitsCoverage,
         addrLine2: parsed.addrLine2 || null,
         hourlyRate: parsed.hourlyRate ?? null,

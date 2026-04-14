@@ -3,7 +3,6 @@
 import { useActionState, useState } from "react";
 import { createEmployee } from "./actions";
 import PayTypeFields from "./pay-type-fields";
-import PaymentMethodFields from "./payment-method-fields";
 
 export default function CreateEmployeeForm() {
   const [state, action] = useActionState(createEmployee, null);
@@ -31,7 +30,8 @@ export default function CreateEmployeeForm() {
       <div className="space-y-1">
         <h2 className="text-xl font-semibold text-gray-900">Create Employee</h2>
         <p className="text-sm text-gray-600">
-          Enter employee and payroll details below. The flow and validation remain unchanged.
+          Enter employee and payroll details below. Trolley payout setup is completed from the
+          employee profile after creation.
         </p>
       </div>
       <form action={action} className="space-y-4">
@@ -153,7 +153,6 @@ export default function CreateEmployeeForm() {
           </select>
         </label>
         <PayTypeFields />
-        <PaymentMethodFields />
         <div className="grid grid-cols-3 gap-4">
           <label className={labelClassName}>
             <span>Vacation %</span>
