@@ -6,6 +6,7 @@ import { getPrimaryCompany } from "@/lib/company";
 import { employeeInputSchema } from "./validators";
 import { encryptSin } from "@/lib/crypto";
 import { revalidatePath } from "next/cache";
+import { syncCompanyEmployeeSeatQuantity } from "@/lib/stripe";
 
 export type CreateEmployeeState = { errors: Record<string, string> } | { success: true } | null;
 const dentalCoverageValues = new Set<DentalBenefitsCoverage>([
@@ -89,6 +90,10 @@ export async function createEmployee(prevState: CreateEmployeeState, formData: F
         payGroup: created.payGroup,
       }),
     }).catch(() => {});
+  }
+
+  if (created.companyId) {
+    await syncCompanyEmployeeSeatQuantity(created.companyId).catch(() => null);
   }
 
   revalidatePath("/employees"); // 목록 즉시 갱신

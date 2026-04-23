@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   consumeAdminToken,
   createAdminSessionCookieValue,
-  getTokenCookieName,
-  getTokenTtlMs,
+  getSessionCookieName,
+  getSessionCookieOptions,
 } from "@/lib/company-auth";
+import { prisma } from "@/lib/prisma";
 
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get("token");
@@ -25,15 +26,24 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Invalid, used, or expired token." }, { status: 401 });
   }
 
+  const user = await prisma.companyUser.findFirst({
+    where: { companyId: company.id },
+    orderBy: { createdAt: "asc" },
+  });
+  if (!user) {
+    return NextResponse.json(
+      { error: "No company user is linked to this workspace. Sign up first." },
+      { status: 409 }
+    );
+  }
+
   const redirectUrl = new URL("/company-settings?setup=verified", req.nextUrl.origin);
   const res = NextResponse.redirect(redirectUrl);
-  res.cookies.set(getTokenCookieName(), createAdminSessionCookieValue(company.id), {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    maxAge: Math.floor(getTokenTtlMs() / 1000),
-    path: "/",
-  });
+  res.cookies.set(
+    getSessionCookieName(),
+    createAdminSessionCookieValue({ companyId: company.id, userId: user.id }),
+    getSessionCookieOptions()
+  );
 
   return res;
 }

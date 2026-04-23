@@ -1,7 +1,11 @@
 import Link from "next/link";
 import AccessForm from "./AccessForm";
+import { prisma } from "@/lib/prisma";
 
-export default function CompanyAccessPage() {
+export default async function CompanyAccessPage() {
+  const accountCount = await prisma.companyUser.count();
+  const hasExistingAccount = accountCount > 0;
+
   return (
     <main className="mx-auto w-full max-w-xl px-6 py-8 space-y-6">
       <header className="space-y-2">
@@ -10,18 +14,22 @@ export default function CompanyAccessPage() {
           className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700"
         >
           <span className="mr-1 text-lg">←</span>
-          Back to Onboarding
+          Back to Company Settings
         </Link>
         <div>
-          <p className="text-sm text-gray-500">Company Settings</p>
-          <h1 className="text-2xl font-semibold">Admin access</h1>
+          <p className="text-sm text-gray-500">Account Access</p>
+          <h1 className="text-2xl font-semibold">
+            {hasExistingAccount ? "Log in to your workspace" : "Create your owner account"}
+          </h1>
           <p className="mt-1 text-sm text-gray-500">
-            Enter the admin email to receive a magic link for Trolley payout setup.
+            {hasExistingAccount
+              ? "Use the email and password for your payroll workspace."
+              : "Create the first owner account, then choose a plan in Company Settings before using payroll."}
           </p>
         </div>
       </header>
 
-      <AccessForm />
+      <AccessForm hasExistingAccount={hasExistingAccount} />
     </main>
   );
 }

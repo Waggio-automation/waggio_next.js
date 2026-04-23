@@ -97,6 +97,12 @@ model PayrollRun {
   failureType   PayrollFailureType?
   failureReason String?
   providerRef   String?
+  billingMonthKey String?
+  extraRunSequence Int?
+  extraRunFeeCents Int?
+  extraRunInvoiceItemId String?
+  extraRunBilledAt DateTime?
+  extraRunBillingError String?
   meta          Json?
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
@@ -106,6 +112,7 @@ model PayrollRun {
   @@index([companyId])
   @@index([payDate, status])
   @@index([sendAt])
+  @@index([companyId, billingMonthKey])
 }
 
 model Company {
@@ -114,6 +121,12 @@ model Company {
   adminEmail          String
   adminTokenHash      String?
   adminTokenCreatedAt DateTime?
+  currentPlan         CompanyPlan?
+  planSelectedAt      DateTime?
+  stripeCustomerId    String?                 @unique
+  stripeSubscriptionId String?                @unique
+  stripeSubscriptionStatus String?
+  stripeCurrentPeriodEnd DateTime?
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
   auditLogs           AuditLog[]
@@ -126,6 +139,24 @@ model Company {
   remittances         Remittance[]
   t4Slips             T4Slip[]
   t4Summaries         T4Summary[]
+  users               CompanyUser[]
+}
+
+model CompanyUser {
+  id           BigInt          @id @default(autoincrement())
+  companyId    BigInt
+  email        String          @unique
+  passwordHash String
+  passwordResetTokenHash String?
+  passwordResetRequestedAt DateTime?
+  firstName    String?
+  lastName     String?
+  role         CompanyUserRole @default(OWNER)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  company      Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, createdAt])
 }
 
 model CompanySettings {
@@ -441,4 +472,14 @@ enum LinkedEntityType {
   T4_SLIP
   T4_SUMMARY
   COMPANY
+}
+
+enum CompanyPlan {
+  BASIC
+  PRO
+}
+
+enum CompanyUserRole {
+  OWNER
+  ADMIN
 }
