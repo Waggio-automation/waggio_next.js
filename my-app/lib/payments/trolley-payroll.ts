@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createBatch, createPayment, startBatchProcessing } from "@/lib/trolley";
+import { billExtraPayrollRunIfNeeded } from "@/lib/stripe";
 
 type SerializablePayHistory = {
   id: bigint;
@@ -209,6 +210,8 @@ export async function sendPayrollRunToTrolley(
       });
     }
   });
+
+  await billExtraPayrollRunIfNeeded(run.id);
 
   return {
     payrollRunId: run.id.toString(),

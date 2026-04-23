@@ -35,7 +35,7 @@ export default async function CraSettingsPage({
   const [settings, missingT4Settings, resolvedSearchParams] = await Promise.all([
     getOrCreateCompanyPayrollSettings(company.id),
     getMissingT4FilingSettings(company.id),
-    searchParams ?? Promise.resolve({}),
+    searchParams ?? Promise.resolve({} as { error?: string; success?: string }),
   ]);
   const showT4Error = resolvedSearchParams.error === "t4-settings-incomplete";
   const showSuccessMessage = resolvedSearchParams.success === "saved";

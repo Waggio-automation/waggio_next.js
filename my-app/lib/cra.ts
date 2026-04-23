@@ -97,6 +97,7 @@ function selectDashboardDocuments(
     id: bigint;
     documentType: string;
     fileName: string;
+    mimeType: string;
     taxYear: number | null;
     uploadedAt: Date;
     linkedEntityType: string;

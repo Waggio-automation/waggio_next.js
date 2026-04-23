@@ -3,6 +3,7 @@ import {
   deriveCompanyStatusFromConfiguration,
   toPrismaEmployeePayoutStatus,
 } from "@/lib/payments/status-mapping";
+import { type CompanyPlanCode } from "@/lib/company-plans";
 
 export type CompanyPayoutConfigurationInput = {
   defaultPayoutCurrency?: string;
@@ -107,6 +108,16 @@ export async function updateCompanyPayoutConfiguration(
       trolleyBatchPrefix,
       payoutEnabled: derived.payoutEnabled,
       payoutSetupStatus: toPrismaEmployeePayoutStatus(derived.payoutSetupStatus),
+    },
+  });
+}
+
+export async function updateCompanyPlan(companyId: bigint, planCode: CompanyPlanCode) {
+  return prisma.company.update({
+    where: { id: companyId },
+    data: {
+      currentPlan: planCode,
+      planSelectedAt: new Date(),
     },
   });
 }
