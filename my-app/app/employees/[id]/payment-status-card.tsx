@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import PlanRequiredButton from "@/app/components/PlanRequiredButton";
 
 type PayoutStatus = "required" | "pending" | "ready" | "issue";
 type PayoutMethod = "bank-transfer" | "paypal";
@@ -9,10 +10,12 @@ export default function PaymentStatusCard({
   employeeId,
   initialStatus,
   initialMethod,
+  hasSelectedPlan,
 }: {
   employeeId: string;
   initialStatus: PayoutStatus;
   initialMethod: PayoutMethod;
+  hasSelectedPlan: boolean;
 }) {
   const [status, setStatus] = useState<PayoutStatus>(initialStatus);
   const [method, setMethod] = useState<PayoutMethod>(initialMethod);
@@ -274,14 +277,15 @@ export default function PaymentStatusCard({
       )}
 
       <div className="flex flex-wrap gap-3">
-        <button
+        <PlanRequiredButton
+          hasSelectedPlan={hasSelectedPlan}
           type="button"
           onClick={savePayoutMethod}
           disabled={loading}
           className="rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-60"
         >
           {loading ? "Saving..." : "Save payout method"}
-        </button>
+        </PlanRequiredButton>
         <button
           type="button"
           onClick={refreshStatus}

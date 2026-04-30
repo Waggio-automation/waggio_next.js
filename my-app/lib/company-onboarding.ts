@@ -29,6 +29,16 @@ function getOnboardingState(params: {
   };
 }
 
+export type PlanRequiredFeature = "employees" | "paystub" | "cra" | "t4";
+
+function getPlanRequiredRedirect(feature?: PlanRequiredFeature) {
+  const params = new URLSearchParams({ setup: "plan_required" });
+  if (feature) {
+    params.set("feature", feature);
+  }
+  return `/company-settings?${params.toString()}`;
+}
+
 export async function getCompanyOnboardingState() {
   const company = await getCompanyFromCookie();
   if (!company) return null;
@@ -43,14 +53,27 @@ export async function getCompanyOnboardingState() {
   return { company, settings, state };
 }
 
-export async function requireTrolleyReadyCompanyOrRedirect() {
+export async function requirePlanSelectedCompanyOrRedirect(feature?: PlanRequiredFeature) {
   const result = await getCompanyOnboardingState();
   if (!result) {
     redirect("/company-settings/access");
   }
 
   if (!result.state.hasSelectedPlan) {
-    redirect("/company-settings?setup=plan_required");
+    redirect(getPlanRequiredRedirect(feature));
+  }
+
+  return result;
+}
+
+export async function requireTrolleyReadyCompanyOrRedirect(feature?: PlanRequiredFeature) {
+  const result = await getCompanyOnboardingState();
+  if (!result) {
+    redirect("/company-settings/access");
+  }
+
+  if (!result.state.hasSelectedPlan) {
+    redirect(getPlanRequiredRedirect(feature));
   }
 
   if (!result.state.isTrolleyReady) {

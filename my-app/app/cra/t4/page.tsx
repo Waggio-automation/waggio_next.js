@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 import { getMissingT4FilingSettings } from "@/lib/cra";
 import { generateT4Action } from "../actions";
+import PlanRequiredButton from "@/app/components/PlanRequiredButton";
 
 type SummaryDocument = {
   id: bigint;
@@ -64,6 +65,7 @@ export default async function T4ManagementPage() {
   const currentYear = new Date().getFullYear();
   const missingSettings = await getMissingT4FilingSettings(company.id);
   const t4Ready = missingSettings.length === 0;
+  const hasSelectedPlan = Boolean(company.currentPlan);
 
   const [summaries, slips] = await Promise.all([
     prisma.t4Summary.findMany({
@@ -119,13 +121,16 @@ export default async function T4ManagementPage() {
               defaultValue={currentYear}
               className="rounded-2xl border border-gray-300 px-4 py-3 text-sm"
             />
-            <button
+            <PlanRequiredButton
+              hasSelectedPlan={hasSelectedPlan}
+              currentPlan={company.currentPlan}
+              requiredPlan="PRO"
               type="submit"
               disabled={!t4Ready}
               className="rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-400"
             >
               Generate now
-            </button>
+            </PlanRequiredButton>
           </form>
         </div>
       </section>

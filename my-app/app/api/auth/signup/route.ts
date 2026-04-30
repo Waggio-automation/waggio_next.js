@@ -46,10 +46,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const existingUserCount = await prisma.companyUser.count();
-  if (existingUserCount > 0) {
+  const existingUser = await prisma.companyUser.findUnique({
+    where: { email },
+    select: { id: true },
+  });
+  if (existingUser) {
     return NextResponse.json(
-      { error: "An account already exists for this workspace. Please log in instead." },
+      { error: "An account already exists for this email. Please log in instead." },
       { status: 409 }
     );
   }
@@ -57,24 +60,12 @@ export async function POST(req: NextRequest) {
   const passwordHash = hashPassword(password);
 
   const result = await prisma.$transaction(async (tx) => {
-    const existingCompany = await tx.company.findFirst({
-      orderBy: { id: "asc" },
+    const company = await tx.company.create({
+      data: {
+        name: companyName,
+        adminEmail: email,
+      },
     });
-
-    const company = existingCompany
-      ? await tx.company.update({
-          where: { id: existingCompany.id },
-          data: {
-            name: companyName,
-            adminEmail: email,
-          },
-        })
-      : await tx.company.create({
-          data: {
-            name: companyName,
-            adminEmail: email,
-          },
-        });
 
     const user = await tx.companyUser.create({
       data: {
@@ -92,7 +83,7 @@ export async function POST(req: NextRequest) {
 
   const res = NextResponse.json({
     ok: true,
-    redirectTo: "/company-settings?setup=account_created",
+    redirectTo: "/?setup=account_created",
   });
   res.cookies.set(
     getSessionCookieName(),

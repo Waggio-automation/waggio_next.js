@@ -2,6 +2,7 @@ import { RemitterType } from "@prisma/client";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 import { getMissingT4FilingSettings, getOrCreateCompanyPayrollSettings } from "@/lib/cra";
 import { saveCraSettingsAction } from "../actions";
+import PlanRequiredButton from "@/app/components/PlanRequiredButton";
 
 const remitterTypeOptions: Array<{ value: RemitterType; label: string; help: string }> = [
   {
@@ -248,12 +249,15 @@ export default async function CraSettingsPage({
           </label>
 
           <div className="md:col-span-2 flex justify-end">
-            <button
+            <PlanRequiredButton
+              hasSelectedPlan={Boolean(company.currentPlan)}
+              currentPlan={company.currentPlan}
+              requiredPlan="PRO"
               type="submit"
               className="rounded-full bg-gray-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
             >
               Save CRA settings
-            </button>
+            </PlanRequiredButton>
           </div>
         </form>
       </section>

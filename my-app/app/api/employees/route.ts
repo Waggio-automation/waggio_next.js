@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getPrimaryCompany } from "@/lib/company";
 import { employeeInputSchema } from "@/app/employees/validators";
+import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 
 // GET: 목록 (민감정보 제외)
 export async function GET() {
+  const company = await requireCompanyAdminOrRedirect();
   const list = await prisma.employee.findMany({
+    where: { companyId: company.id },
     orderBy: [{ createdAt: "desc" }],
     select: {
       id:true, firstName:true, lastName:true, email:true,
@@ -21,13 +23,19 @@ export async function GET() {
 // POST: 생성 (외부 시스템—for example n8n—에서 호출)
 export async function POST(req: NextRequest) {
   try {
+    const company = await requireCompanyAdminOrRedirect();
+    if (!company.currentPlan) {
+      return NextResponse.json(
+        { error: "Choose a plan before creating employees." },
+        { status: 402 }
+      );
+    }
     // (선택) API 키 검사
     // if (req.headers.get("x-api-key") !== process.env.API_KEY) return NextResponse.json({error:"unauthorized"}, {status:401});
 
     const body = await req.json();
     const parsed = employeeInputSchema.parse(body);
 
-    const company = await getPrimaryCompany();
     const created = await prisma.employee.create({
       data: {
         ...parsed,
@@ -38,7 +46,7 @@ export async function POST(req: NextRequest) {
         salary: parsed.salary ?? null,
         rppDpspRegistrationNumber: parsed.rppDpspRegistrationNumber?.trim() || null,
         pensionAdjustmentOverride: parsed.pensionAdjustmentOverride ?? null,
-        companyId: company?.id ?? null,
+        companyId: company.id,
         payoutSetupStatus: "REQUIRED",
         payoutEnabled: false,
       },

@@ -34,7 +34,7 @@ function getSetupMessage(setup: string | undefined) {
   if (setup === "account_created") {
     return {
       tone: "ok",
-      text: "Account created. Choose a plan below to activate the workspace.",
+      text: "Account created. Choose a plan when you are ready to activate payroll or CRA workflows.",
     };
   }
   if (setup === "login_success") {
@@ -43,7 +43,13 @@ function getSetupMessage(setup: string | undefined) {
   if (setup === "plan_required") {
     return {
       tone: "error",
-      text: "Choose a plan before using payroll, employees, or CRA workflows.",
+      text: "Choose Basic or Pro to activate your workspace.",
+    };
+  }
+  if (setup === "upgrade_required") {
+    return {
+      tone: "error",
+      text: "Switch to Pro to use CRA remittances, T4 generation, and year-end filing workflows.",
     };
   }
   if (setup === "plan_saved") {
@@ -144,6 +150,9 @@ export default async function CompanySettingsPage({
   const employeesNeedingPayoutSetup = employees.filter((employee) => !employee.payoutEnabled);
   const hasStripeSubscription = Boolean(latestCompany.stripeSubscriptionId);
   const stripeStatus = latestCompany.stripeSubscriptionStatus ?? "not_started";
+  const shouldExpandPlanSelection =
+    params.setup === "plan_required" || params.setup === "upgrade_required";
+  const shouldHighlightPro = params.setup === "upgrade_required";
 
   return (
     <main className="mx-auto w-full max-w-5xl px-6 py-8 space-y-6">
@@ -191,14 +200,29 @@ export default async function CompanySettingsPage({
         </section>
       ) : null}
 
-      <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm space-y-4">
-        <div className="space-y-1">
-          <h2 className="text-xl font-semibold text-gray-900">Plan selection</h2>
+      <details
+        open={shouldExpandPlanSelection}
+        className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm"
+      >
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 [&::-webkit-details-marker]:hidden">
+          <div className="space-y-1">
+            <h2 className="text-xl font-semibold text-gray-900">Plan selection</h2>
+            <p className="text-sm text-gray-600">
+              {latestCompany.currentPlan
+                ? `Current plan: ${latestCompany.currentPlan === "PRO" ? "Pro" : "Basic"}`
+                : "Basic and Pro pricing is available here when you need to choose a plan."}
+            </p>
+          </div>
+          <span className="shrink-0 rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700">
+            View plans
+          </span>
+        </summary>
+
+        <div className="mt-5 space-y-4">
           <p className="text-sm text-gray-600">
             The current plan controls pricing and included payroll runs. New subscriptions start in
             Stripe Checkout, and existing subscriptions can be updated anytime.
           </p>
-        </div>
 
         <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-700">
           <span className="font-medium text-gray-900">
@@ -216,12 +240,15 @@ export default async function CompanySettingsPage({
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {plans.map((plan) => {
             const isCurrent = latestCompany.currentPlan === plan.code && hasStripeSubscription;
+            const isUpgradeRecommendation = shouldHighlightPro && plan.code === "PRO";
 
             return (
               <article
                 key={plan.code}
                 className={`rounded-3xl border p-6 ${
-                  isCurrent ? "border-gray-900 bg-gray-50" : "border-gray-200 bg-white"
+                  isCurrent || isUpgradeRecommendation
+                    ? "border-gray-900 bg-gray-50"
+                    : "border-gray-200 bg-white"
                 }`}
               >
                 <div className="space-y-3">
@@ -231,6 +258,11 @@ export default async function CompanySettingsPage({
                       {isCurrent ? (
                         <span className="rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white">
                           Current plan
+                        </span>
+                      ) : null}
+                      {!isCurrent && isUpgradeRecommendation ? (
+                        <span className="rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white">
+                          Required for CRA
                         </span>
                       ) : null}
                     </div>
@@ -304,7 +336,8 @@ export default async function CompanySettingsPage({
           The current billing flow charges the monthly base fee and per-employee monthly fee through
           Stripe. Additional payroll run overages are not yet metered automatically.
         </p>
-      </section>
+        </div>
+      </details>
 
       <CompanyBankAccountCard
         initialStatus={initialStatus}

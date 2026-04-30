@@ -16,8 +16,18 @@ function asString(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value : "";
 }
 
+function requireProPlan(company: { currentPlan: string | null }) {
+  if (!company.currentPlan) {
+    redirect("/company-settings?setup=plan_required");
+  }
+  if (company.currentPlan !== "PRO") {
+    redirect("/company-settings?setup=upgrade_required");
+  }
+}
+
 export async function saveCraSettingsAction(formData: FormData) {
   const company = await requireCompanyAdminOrRedirect();
+  requireProPlan(company);
 
   const remitterType = asString(formData.get("remitterType")) as RemitterType;
 
@@ -55,6 +65,7 @@ export async function saveCraSettingsAction(formData: FormData) {
 
 export async function syncRemittancesAction() {
   const company = await requireCompanyAdminOrRedirect();
+  requireProPlan(company);
   await syncRemittancesForCompany(company.id);
   revalidatePath("/");
   revalidatePath("/cra");
@@ -62,6 +73,7 @@ export async function syncRemittancesAction() {
 
 export async function markRemittancePaidAction(formData: FormData) {
   const company = await requireCompanyAdminOrRedirect();
+  requireProPlan(company);
 
   await recordRemittancePayment({
     companyId: company.id,
@@ -80,6 +92,7 @@ export async function markRemittancePaidAction(formData: FormData) {
 
 export async function generateT4Action(formData: FormData) {
   const company = await requireCompanyAdminOrRedirect();
+  requireProPlan(company);
   const taxYear = Number(asString(formData.get("taxYear")) || new Date().getFullYear());
   const missingSettings = await getMissingT4FilingSettings(company.id);
 

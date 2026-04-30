@@ -2,6 +2,12 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createBatch, createPayment, startBatchProcessing } from "@/lib/trolley";
 import { billExtraPayrollRunIfNeeded } from "@/lib/stripe";
+import {
+  buildTrolleyPayHistoryExternalId,
+  buildTrolleyPayrollRunExternalId,
+  buildTrolleyTags,
+  getOrCreateTrolleyTenantContext,
+} from "@/lib/payments/trolley-tenancy";
 
 type SerializablePayHistory = {
   id: bigint;
@@ -20,12 +26,19 @@ type SerializablePayHistory = {
 
 type SerializablePayrollRun = {
   id: bigint;
+  companyId: bigint | null;
   payDate: Date;
   sendAt: Date | null;
   status: string;
   failureType: string | null;
   providerRef: string | null;
   meta: unknown;
+  company: {
+    settings: {
+      defaultPayoutCurrency: string;
+      trolleyBatchPrefix: string | null;
+    } | null;
+  } | null;
   payHistory: SerializablePayHistory[];
 };
 
@@ -52,12 +65,23 @@ async function loadPayrollRun(payrollRunId: bigint) {
     where: { id: payrollRunId },
     select: {
       id: true,
+      companyId: true,
       payDate: true,
       sendAt: true,
       status: true,
       failureType: true,
       providerRef: true,
       meta: true,
+      company: {
+        select: {
+          settings: {
+            select: {
+              defaultPayoutCurrency: true,
+              trolleyBatchPrefix: true,
+            },
+          },
+        },
+      },
       payHistory: {
         select: {
           id: true,
@@ -109,6 +133,13 @@ function assertRunnable(run: SerializablePayrollRun, options: { enforceDue: bool
     );
   }
 
+  if (!run.companyId) {
+    throw new PayrollSendError(
+      "missing_company",
+      `Payroll run ${run.id.toString()} is not assigned to a company.`
+    );
+  }
+
   for (const row of run.payHistory) {
     if (row.netPay.lte(0)) {
       throw new PayrollSendError(
@@ -140,16 +171,34 @@ export async function sendPayrollRunToTrolley(
   }
 
   assertRunnable(run, options);
+  const companyId = run.companyId;
+  if (!companyId) {
+    throw new PayrollSendError(
+      "missing_company",
+      `Payroll run ${run.id.toString()} is not assigned to a company.`
+    );
+  }
+
+  const tenantContext = await getOrCreateTrolleyTenantContext(companyId);
+  const payoutCurrency = run.company?.settings?.defaultPayoutCurrency ?? "CAD";
+  const batchPrefix = run.company?.settings?.trolleyBatchPrefix ?? "payroll";
+  const batchExternalId = buildTrolleyPayrollRunExternalId({
+    companyId,
+    payrollRunId: run.id,
+  });
 
   const batch = await createBatch({
-    name: `Payroll ${formatPayDate(run.payDate)}`,
-    sourceCurrency: "CAD",
-    description: `Payroll run ${run.id.toString()}`,
-    externalId: run.id.toString(),
+    name: `${batchPrefix} ${formatPayDate(run.payDate)} ${tenantContext.tenantKey}`,
+    sourceCurrency: payoutCurrency,
+    description: `Payroll run ${run.id.toString()} for company ${companyId.toString()}`,
+    externalId: batchExternalId,
     metadata: {
+      companyId: companyId.toString(),
+      tenantKey: tenantContext.tenantKey,
       payrollRunId: run.id.toString(),
       payDate: formatPayDate(run.payDate),
     },
+    tags: buildTrolleyTags(tenantContext, "batch", ["payroll"]),
   });
 
   const paymentResults: Array<{ payHistoryId: bigint; paymentId: string }> = [];
@@ -159,14 +208,20 @@ export async function sendPayrollRunToTrolley(
       recipientId: row.employee.trolleyRecipientId!,
       recipientAccountId: row.employee.trolleyRecipientAccountId!,
       amount: formatAmount(row.netPay),
-      currency: "CAD",
+      currency: payoutCurrency,
       description: `Net payroll for ${row.employee.firstName} ${row.employee.lastName}`,
-      externalId: row.id.toString(),
+      externalId: buildTrolleyPayHistoryExternalId({
+        companyId,
+        payHistoryId: row.id,
+      }),
       metadata: {
+        companyId: companyId.toString(),
+        tenantKey: tenantContext.tenantKey,
         payrollRunId: run.id.toString(),
         payHistoryId: row.id.toString(),
         employeeId: row.employee.id.toString(),
       },
+      tags: buildTrolleyTags(tenantContext, "payment", ["payroll"]),
     });
 
     paymentResults.push({

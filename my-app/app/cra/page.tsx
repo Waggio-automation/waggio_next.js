@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 import { getCraDashboard, getReminderState } from "@/lib/cra";
 import { generateT4Action, syncRemittancesAction } from "./actions";
+import PlanRequiredButton from "@/app/components/PlanRequiredButton";
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("en-CA", {
@@ -100,6 +101,7 @@ export default async function CraDashboardPage() {
   const company = await requireCompanyAdminOrRedirect();
   const dashboard = await getCraDashboard(company.id);
   const currentYear = new Date().getFullYear();
+  const hasSelectedPlan = Boolean(company.currentPlan);
 
   return (
     <div className="space-y-6">
@@ -143,12 +145,15 @@ export default async function CraDashboardPage() {
               </p>
             </div>
             <form action={syncRemittancesAction}>
-              <button
+              <PlanRequiredButton
+                hasSelectedPlan={hasSelectedPlan}
+                currentPlan={company.currentPlan}
+                requiredPlan="PRO"
                 type="submit"
                 className="rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
               >
                 Refresh remittances
-              </button>
+              </PlanRequiredButton>
             </form>
           </div>
 
@@ -215,12 +220,15 @@ export default async function CraDashboardPage() {
                 defaultValue={currentYear}
                 className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
               />
-              <button
+              <PlanRequiredButton
+                hasSelectedPlan={hasSelectedPlan}
+                currentPlan={company.currentPlan}
+                requiredPlan="PRO"
                 type="submit"
                 className="w-full rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
               >
                 Generate T4 package
-              </button>
+              </PlanRequiredButton>
             </form>
             <Link href="/cra/t4" className="mt-4 inline-block text-sm font-medium text-gray-900 underline">
               Review T4 records

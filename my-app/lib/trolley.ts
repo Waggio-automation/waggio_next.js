@@ -127,6 +127,7 @@ export interface CreateBatchInput {
   description?: string;
   externalId?: string;
   metadata?: Record<string, string>;
+  tags?: string[];
 }
 
 export interface Batch {
@@ -150,6 +151,7 @@ export interface CreatePaymentInput {
   description?: string;
   externalId?: string;
   metadata?: Record<string, string>;
+  tags?: string[];
 }
 
 export interface Payment {

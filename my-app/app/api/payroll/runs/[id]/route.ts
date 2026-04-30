@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 
 function serializeBigInt<T>(value: T): T {
   return JSON.parse(
@@ -13,6 +14,7 @@ export async function GET(
   _: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const company = await requireCompanyAdminOrRedirect();
   const { id } = await params;
 
   let payrollRunId: bigint;
@@ -23,7 +25,7 @@ export async function GET(
   }
 
   const payrollRun = await prisma.payrollRun.findUnique({
-    where: { id: payrollRunId },
+    where: { id: payrollRunId, companyId: company.id },
     include: {
       payHistory: {
         include: {

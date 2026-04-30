@@ -5,6 +5,7 @@ import {
   deriveEmployeeStatusFromTrolleyRecipient,
   toPrismaEmployeePayoutStatus,
 } from "@/lib/payments/status-mapping";
+import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 
 function parseEmployeeId(id: string) {
   try {
@@ -33,6 +34,7 @@ export async function GET(
   _: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const company = await requireCompanyAdminOrRedirect();
   const { id } = await params;
   const employeeId = parseEmployeeId(id);
 
@@ -41,7 +43,7 @@ export async function GET(
   }
 
   const employee = await prisma.employee.findUnique({
-    where: { id: employeeId },
+    where: { id: employeeId, companyId: company.id },
     select: {
       id: true,
       trolleyRecipientId: true,
@@ -74,7 +76,7 @@ export async function GET(
     });
 
     const updated = await prisma.employee.update({
-      where: { id: employee.id },
+      where: { id: employee.id, companyId: company.id },
       data: {
         payoutSetupStatus: toPrismaEmployeePayoutStatus(derived.payoutSetupStatus),
         payoutEnabled: derived.payoutEnabled,
@@ -95,7 +97,7 @@ export async function GET(
     });
   } catch {
     await prisma.employee.update({
-      where: { id: employee.id },
+      where: { id: employee.id, companyId: company.id },
       data: {
         payoutSetupStatus: "ISSUE",
         payoutEnabled: false,

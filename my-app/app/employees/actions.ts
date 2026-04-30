@@ -2,11 +2,12 @@
 
 import { DentalBenefitsCoverage } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { getPrimaryCompany } from "@/lib/company";
 import { employeeInputSchema } from "./validators";
 import { encryptSin } from "@/lib/crypto";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { syncCompanyEmployeeSeatQuantity } from "@/lib/stripe";
+import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 
 export type CreateEmployeeState = { errors: Record<string, string> } | { success: true } | null;
 const dentalCoverageValues = new Set<DentalBenefitsCoverage>([
@@ -37,10 +38,13 @@ export async function createEmployee(prevState: CreateEmployeeState, formData: F
   }
 
   // 3) 저장
-  const company = await getPrimaryCompany();
+  const company = await requireCompanyAdminOrRedirect();
+  if (!company.currentPlan) {
+    redirect("/company-settings?setup=plan_required");
+  }
   const created = await prisma.employee.create({
     data: {
-      companyId: company?.id ?? null,
+      companyId: company.id,
       firstName: parsed.data.firstName,
       lastName : parsed.data.lastName,
       email    : parsed.data.email,
@@ -92,15 +96,20 @@ export async function createEmployee(prevState: CreateEmployeeState, formData: F
     }).catch(() => {});
   }
 
-  if (created.companyId) {
-    await syncCompanyEmployeeSeatQuantity(created.companyId).catch(() => null);
-  }
+  await syncCompanyEmployeeSeatQuantity(company.id).catch(() => null);
 
   revalidatePath("/employees"); // 목록 즉시 갱신
   return { success: true };
 }
 
 export async function updateEmployeeCraProfileAction(formData: FormData) {
+  const company = await requireCompanyAdminOrRedirect();
+  if (!company.currentPlan) {
+    redirect("/company-settings?setup=plan_required");
+  }
+  if (company.currentPlan !== "PRO") {
+    redirect("/company-settings?setup=upgrade_required");
+  }
   const employeeId = BigInt(asString(formData.get("employeeId")));
   const dentalBenefitsCoverage = asString(formData.get("dentalBenefitsCoverage"));
   const rppDpspRegistrationNumber = asString(formData.get("rppDpspRegistrationNumber"));
@@ -112,7 +121,7 @@ export async function updateEmployeeCraProfileAction(formData: FormData) {
     : "NONE";
 
   await prisma.employee.update({
-    where: { id: employeeId },
+    where: { id: employeeId, companyId: company.id },
     data: {
       dentalBenefitsCoverage: normalizedDentalCoverage,
       rppDpspRegistrationNumber: rppDpspRegistrationNumber.trim() || null,

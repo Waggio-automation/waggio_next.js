@@ -12,7 +12,12 @@ import {
   deriveEmployeeStatusFromTrolleyRecipient,
   toPrismaEmployeePayoutStatus,
 } from "@/lib/payments/status-mapping";
-import { getPrimaryCompany } from "@/lib/company";
+import {
+  buildTrolleyRecipientReferenceId,
+  buildTrolleyTags,
+  getOrCreateTrolleyTenantContext,
+} from "@/lib/payments/trolley-tenancy";
+import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 
 const bankTransferSchema = z
   .object({
@@ -101,6 +106,13 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const company = await requireCompanyAdminOrRedirect();
+  if (!company.currentPlan) {
+    return NextResponse.json(
+      { error: "Choose a plan before saving payout methods." },
+      { status: 402 }
+    );
+  }
   const { id } = await params;
   const employeeId = parseEmployeeId(id);
 
@@ -109,7 +121,7 @@ export async function POST(
   }
 
   const employee = await prisma.employee.findUnique({
-    where: { id: employeeId },
+    where: { id: employeeId, companyId: company.id },
     select: {
       id: true,
       email: true,
@@ -118,6 +130,7 @@ export async function POST(
       payoutSetupStatus: true,
       payoutEnabled: true,
       trolleyRecipientId: true,
+      trolleyReferenceId: true,
       trolleyRecipientAccountId: true,
       addrLine1: true,
       addrLine2: true,
@@ -146,22 +159,13 @@ export async function POST(
   }
 
   try {
-    let companyId = employee.companyId;
-    if (!companyId) {
-      const company = await getPrimaryCompany();
-      if (!company) {
-        return NextResponse.json(
-          { error: "Company settings must be configured before setting up employee payouts." },
-          { status: 400 }
-        );
-      }
-
-      companyId = company.id;
-      await prisma.employee.update({
-        where: { id: employee.id },
-        data: { companyId },
+    const tenantContext = await getOrCreateTrolleyTenantContext(company.id);
+    const recipientReferenceId =
+      employee.trolleyReferenceId ??
+      buildTrolleyRecipientReferenceId({
+        companyId: company.id,
+        employeeId: employee.id,
       });
-    }
 
     let recipientId = employee.trolleyRecipientId;
     if (!recipientId) {
@@ -179,8 +183,8 @@ export async function POST(
             postalCode: employee.addrPostal,
             country: employee.addrCountry,
           },
-          referenceId: employee.id.toString(),
-          tags: ["employee", "payroll"],
+          referenceId: recipientReferenceId,
+          tags: buildTrolleyTags(tenantContext, "recipient", ["employee", "payroll"]),
         });
 
         recipientId = recipient.id;
@@ -213,6 +217,8 @@ export async function POST(
           postalCode: employee.addrPostal,
           country: employee.addrCountry,
         },
+        referenceId: recipientReferenceId,
+        tags: buildTrolleyTags(tenantContext, "recipient", ["employee", "payroll"]),
       });
     }
 
@@ -223,9 +229,10 @@ export async function POST(
     });
 
     const updated = await prisma.employee.update({
-      where: { id: employee.id },
+      where: { id: employee.id, companyId: company.id },
       data: {
         trolleyRecipientId: recipientId,
+        trolleyReferenceId: recipientReferenceId,
         trolleyRecipientAccountId: account.id,
         trolleyRecipientAccountType: payload.type,
         payoutEnabled: derived.payoutEnabled,

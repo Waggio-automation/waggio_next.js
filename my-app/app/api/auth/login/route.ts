@@ -37,9 +37,7 @@ export async function POST(req: NextRequest) {
 
   const res = NextResponse.json({
     ok: true,
-    redirectTo: user.company.currentPlan
-      ? "/company-settings?setup=login_success"
-      : "/company-settings?setup=plan_required",
+    redirectTo: "/?setup=login_success",
   });
   res.cookies.set(
     getSessionCookieName(),

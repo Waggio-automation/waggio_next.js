@@ -2,9 +2,12 @@ import { prisma } from "@/lib/prisma";
 import CreateEmployeeForm from "./CreateEmployeeForm";
 import EmployeesClient from "./EmployeesClient";
 import Link from "next/link";
+import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 
 export default async function EmployeesPage() {
+  const company = await requireCompanyAdminOrRedirect();
   const employees = await prisma.employee.findMany({
+    where: { companyId: company.id },
     orderBy: [{ createdAt: "desc" }],
     select: {
       id: true,
@@ -21,7 +24,7 @@ export default async function EmployeesPage() {
     },
   });
 
-  const createForm = <CreateEmployeeForm />;
+  const createForm = <CreateEmployeeForm hasSelectedPlan={Boolean(company.currentPlan)} />;
 
   const table = (
     <section className="rounded-3xl border border-gray-200 bg-white shadow-sm overflow-hidden">

@@ -1,18 +1,41 @@
 // app/page.tsx
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { requireTrolleyReadyCompanyOrRedirect } from "@/lib/company-onboarding";
-import { getCompanyPlans } from "@/lib/company-plans";
+import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 import { getCraDashboard } from "@/lib/cra";
 
-export default async function HomePage() {
-  const onboarding = await requireTrolleyReadyCompanyOrRedirect();
-  const plans = getCompanyPlans();
+function getSetupMessage(setup: string | undefined) {
+  if (setup === "account_created") {
+    return "Account created. Choose a plan when you open a payroll or CRA workflow.";
+  }
+  if (setup === "login_success") {
+    return "Logged in successfully.";
+  }
+  return null;
+}
+
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ setup?: string }>;
+}) {
+  const company = await requireCompanyAdminOrRedirect();
+  const params = await searchParams;
+  const setupMessage = getSetupMessage(params.setup);
+  const hasSelectedPlan = Boolean(company.currentPlan);
+  const choosePlanHref = "/company-settings?setup=plan_required";
+  const employeesHref = "/employees";
+  const paystubHref = "/payroll";
+  const craHref = "/cra";
+  const t4Href = "/cra/t4";
 
   // DB summary
   const [employeeCount, recentEmployees, craDashboard] = await Promise.all([
-    prisma.employee.count(),
+    prisma.employee.count({
+      where: { companyId: company.id },
+    }),
     prisma.employee.findMany({
+      where: { companyId: company.id },
       orderBy: { createdAt: "desc" },
       take: 5,
       select: {
@@ -25,7 +48,7 @@ export default async function HomePage() {
         hireDate: true,
       },
     }),
-    getCraDashboard(onboarding.company.id),
+    getCraDashboard(company.id),
   ]);
 
   const formatMoney = new Intl.NumberFormat("en-CA", {
@@ -49,35 +72,35 @@ export default async function HomePage() {
               </p>
             </div>
           </div>
-          <nav className="flex flex-wrap items-center gap-2 text-sm md:flex-nowrap md:justify-end">
+          <nav className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto pb-1 text-sm lg:w-auto lg:justify-end lg:overflow-visible lg:pb-0">
             <Link
-              href="/employees"
-              className="rounded-full border border-gray-300 px-3 py-2 text-gray-700 hover:bg-gray-50 md:px-3.5"
+              href={employeesHref}
+              className="inline-flex whitespace-nowrap rounded-full border border-gray-300 px-3 py-2 text-gray-700 hover:bg-gray-50 md:px-3.5"
             >
               Employees
             </Link>
             <Link
-              href="/payroll"
-              className="whitespace-nowrap rounded-full border border-gray-300 px-3 py-2 text-gray-700 hover:bg-gray-50 md:px-3.5"
+              href={paystubHref}
+              className="inline-flex whitespace-nowrap rounded-full border border-gray-300 px-3 py-2 text-gray-700 hover:bg-gray-50 md:px-3.5"
             >
               Create Paystub
             </Link>
             <Link
-              href="/cra"
-              className="rounded-full border border-gray-300 px-3 py-2 text-gray-700 hover:bg-gray-50 md:px-3.5"
+              href={craHref}
+              className="inline-flex whitespace-nowrap rounded-full border border-gray-300 px-3 py-2 text-gray-700 hover:bg-gray-50 md:px-3.5"
             >
               CRA
             </Link>
             <Link
               href="/company-settings"
-              className="whitespace-nowrap rounded-full border border-gray-300 px-3 py-2 text-gray-700 hover:bg-gray-50 md:px-3.5"
+              className="inline-flex whitespace-nowrap rounded-full border border-gray-300 px-3 py-2 text-gray-700 hover:bg-gray-50 md:px-3.5"
             >
               Company Settings
             </Link>
-            <form action="/api/auth/logout" method="post">
+            <form action="/api/auth/logout" method="post" className="shrink-0">
               <button
                 type="submit"
-                className="rounded-full border border-gray-300 px-3 py-2 text-gray-700 hover:bg-gray-50 md:px-3.5"
+                className="inline-flex whitespace-nowrap rounded-full border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 md:px-3.5"
               >
                 Log out
               </button>
@@ -85,6 +108,32 @@ export default async function HomePage() {
           </nav>
         </div>
       </header>
+
+      {setupMessage ? (
+        <section className="inline-flex max-w-fit rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm text-emerald-800">
+          {setupMessage}
+        </section>
+      ) : null}
+
+      {!hasSelectedPlan ? (
+        <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-2">
+              <p className="text-sm uppercase tracking-[0.2em] text-gray-500">Plan not selected</p>
+              <h2 className="text-2xl font-semibold text-gray-900">Pick a plan when you start a workflow</h2>
+              <p className="max-w-2xl text-sm text-gray-600">
+                Your account is ready. Choose Basic or Pro to activate payroll and CRA workflows.
+              </p>
+            </div>
+            <Link
+              href={choosePlanHref}
+              className="inline-flex w-fit whitespace-nowrap rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+            >
+              Choose a plan
+            </Link>
+          </div>
+        </section>
+      ) : null}
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -104,22 +153,28 @@ export default async function HomePage() {
           <div className="text-sm text-gray-500">Quick actions</div>
           <div className="mt-4 flex flex-wrap gap-2">
             <Link
-              href="/employees"
+              href={employeesHref}
               className="rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
             >
               New Employee
             </Link>
             <Link
-              href="/payroll"
+              href={paystubHref}
               className="rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
             >
               Create Paystub
             </Link>
             <Link
-              href="/cra"
+              href={craHref}
               className="rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
             >
               Open CRA
+            </Link>
+            <Link
+              href={t4Href}
+              className="rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              T4
             </Link>
           </div>
         </div>
@@ -136,7 +191,7 @@ export default async function HomePage() {
                 : "No open remittance yet"}
             </p>
             <Link
-              href="/cra"
+              href={craHref}
               className="inline-flex rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
             >
               View CRA workspace
@@ -181,7 +236,7 @@ export default async function HomePage() {
                 <tr>
                   <td className="p-6 text-center text-gray-500" colSpan={5}>
                     No employees yet.{" "}
-                    <Link className="font-medium text-gray-900 underline" href="/employees">
+                    <Link className="font-medium text-gray-900 underline" href={employeesHref}>
                       Create one
                     </Link>
                     .
@@ -190,55 +245,6 @@ export default async function HomePage() {
               )}
             </tbody>
           </table>
-        </div>
-      </section>
-
-      <section className="space-y-4">
-        <div className="space-y-2">
-          <p className="text-sm uppercase tracking-[0.2em] text-gray-500">Pricing</p>
-          <div className="space-y-1">
-            <h2 className="text-2xl font-semibold tracking-tight text-gray-900">
-              Plans for payroll and CRA workflows
-            </h2>
-            <p className="max-w-3xl text-sm text-gray-600">
-              Compare the included payroll runs, automation coverage, and extra-run pricing for
-              each plan.
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {plans.map((plan) => (
-            <article
-              key={plan.code}
-              className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm"
-            >
-              <div className="space-y-3">
-                <div>
-                  <p className="text-sm uppercase tracking-[0.2em] text-gray-500">{plan.name}</p>
-                  <h3 className="mt-2 text-3xl font-semibold text-gray-900">{plan.price}</h3>
-                  <p className="mt-1 text-sm text-gray-600">{plan.perEmployee}</p>
-                </div>
-
-                <p className="text-sm leading-6 text-gray-700">{plan.description}</p>
-
-                <ul className="space-y-2 text-sm text-gray-700">
-                  {plan.features.map((feature) => (
-                    <li key={feature} className="flex gap-2">
-                      <span className="mt-1 h-2 w-2 rounded-full bg-gray-900" aria-hidden="true" />
-                      <span>{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                <div className="rounded-2xl bg-gray-50 p-4 text-sm text-gray-700">
-                  <p className="font-medium text-gray-900">Payroll runs</p>
-                  <p className="mt-2 leading-6">{plan.includedRuns}</p>
-                  <p className="mt-2 leading-6 text-gray-600">{plan.overage}</p>
-                </div>
-              </div>
-            </article>
-          ))}
         </div>
       </section>
     </main>

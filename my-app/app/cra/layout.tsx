@@ -1,7 +1,10 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 
-export default function CraLayout({ children }: { children: ReactNode }) {
+export default async function CraLayout({ children }: { children: ReactNode }) {
+  await requireCompanyAdminOrRedirect();
+
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">

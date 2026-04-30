@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 
 const VALID_PAYROLL_RUN_STATUSES = [
   "SCHEDULED",
@@ -20,6 +21,7 @@ function serializeBigInt<T>(value: T): T {
 }
 
 export async function GET(req: NextRequest) {
+  const company = await requireCompanyAdminOrRedirect();
   const status = req.nextUrl.searchParams.get("status");
 
   if (status && !VALID_PAYROLL_RUN_STATUSES.includes(status as (typeof VALID_PAYROLL_RUN_STATUSES)[number])) {
@@ -27,7 +29,10 @@ export async function GET(req: NextRequest) {
   }
 
   const data = await prisma.payrollRun.findMany({
-    where: status ? { status: status as (typeof VALID_PAYROLL_RUN_STATUSES)[number] } : undefined,
+    where: {
+      companyId: company.id,
+      ...(status ? { status: status as (typeof VALID_PAYROLL_RUN_STATUSES)[number] } : {}),
+    },
     include: {
       company: {
         select: {

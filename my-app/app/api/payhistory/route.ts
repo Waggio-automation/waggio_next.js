@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calculatePayrollAmounts } from "@/lib/payroll/calculatePayroll";
 import { z } from "zod";
+import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 
 const itemSchema = z.object({
   employeeId: z.string().min(1),       // stringified BIGINT
@@ -27,6 +28,7 @@ function serializeBigInt<T>(value: T): T {
 }
 
 export async function GET(req: NextRequest) {
+  const company = await requireCompanyAdminOrRedirect();
   const payrollRunId = req.nextUrl.searchParams.get("payrollRunId");
   if (!payrollRunId) {
     return NextResponse.json({ error: "Missing payrollRunId query parameter" }, { status: 400 });
@@ -40,7 +42,10 @@ export async function GET(req: NextRequest) {
   }
 
   const data = await prisma.payHistory.findMany({
-    where: { payrollRunId: payrollRunIdBigInt },
+    where: {
+      payrollRunId: payrollRunIdBigInt,
+      employee: { companyId: company.id },
+    },
     include: { employee: true },
   });
 
@@ -48,7 +53,13 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const idem = req.headers.get("Idempotency-Key") || undefined;
+  const company = await requireCompanyAdminOrRedirect();
+  if (!company.currentPlan) {
+    return NextResponse.json(
+      { error: "Choose a plan before creating pay history." },
+      { status: 402 }
+    );
+  }
   const json = await req.json();
   const parsed = payloadSchema.safeParse(json);
   if (!parsed.success) {
@@ -56,7 +67,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 멱등 키로 중복 방지하고 싶다면 여기에 로직 추가 가능 (예: 별도 테이블)
-  const { periodStart, periodEnd, payDate, items } = parsed.data;
+  const { payDate, items } = parsed.data;
 
   let createdCount = 0;
 
@@ -64,7 +75,7 @@ export async function POST(req: NextRequest) {
     for (const it of items) {
       const empIdBig = BigInt(it.employeeId); // 문자열 → BIGINT
       const emp = await tx.employee.findUnique({
-        where: { id: empIdBig },
+        where: { id: empIdBig, companyId: company.id },
         select: {
           id: true, payType: true, hourlyRate: true, salary: true, payGroup: true, vacationPay: true,
         },
@@ -120,6 +131,13 @@ const statusPatchSchema = z.object({
 });
 
 export async function PATCH(req: NextRequest) {
+  const company = await requireCompanyAdminOrRedirect();
+  if (!company.currentPlan) {
+    return NextResponse.json(
+      { error: "Choose a plan before updating pay history." },
+      { status: 402 }
+    );
+  }
   const json = await req.json();
   const parsed = statusPatchSchema.safeParse(json);
   if (!parsed.success) {
@@ -147,7 +165,10 @@ export async function PATCH(req: NextRequest) {
   };
 
   const updated = await prisma.payHistory.updateMany({
-    where: { id: { in: idList } },
+    where: {
+      id: { in: idList },
+      employee: { companyId: company.id },
+    },
     data: updateData,
   });
 
