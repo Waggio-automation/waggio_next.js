@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { RemitterType } from "@prisma/client";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 import {
   generateT4Package,
@@ -11,6 +10,7 @@ import {
   syncRemittancesForCompany,
   updateCompanyPayrollSettings,
 } from "@/lib/cra";
+import { craSettingsInputSchema } from "./validators";
 
 function asString(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value : "";
@@ -29,30 +29,31 @@ export async function saveCraSettingsAction(formData: FormData) {
   const company = await requireCompanyAdminOrRedirect();
   requireProPlan(company);
 
-  const remitterType = asString(formData.get("remitterType")) as RemitterType;
+  const parsed = craSettingsInputSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) {
+    redirect("/cra/settings?error=invalid-settings");
+  }
 
   await updateCompanyPayrollSettings(company.id, {
-    legalName: asString(formData.get("legalName")),
-    businessNumber: asString(formData.get("businessNumber")),
-    payrollProgramAccount: asString(formData.get("payrollProgramAccount")),
-    addressLine1: asString(formData.get("addressLine1")),
-    addressLine2: asString(formData.get("addressLine2")),
-    city: asString(formData.get("city")),
-    provinceCode: asString(formData.get("provinceCode")),
-    postalCode: asString(formData.get("postalCode")),
-    countryCode: asString(formData.get("countryCode")),
-    remitterType,
-    contactName: asString(formData.get("contactName")),
-    contactPhone: asString(formData.get("contactPhone")),
-    contactPhoneExtension: asString(formData.get("contactPhoneExtension")),
-    contactEmail: asString(formData.get("contactEmail")),
-    transmitterAccountNumber: asString(formData.get("transmitterAccountNumber")),
-    transmitterRepId: asString(formData.get("transmitterRepId")),
-    submissionLanguageCode: asString(formData.get("submissionLanguageCode")),
-    preDueReminderDays: Number(asString(formData.get("preDueReminderDays")) || 7),
-    postDueReminderFrequencyDays: Number(
-      asString(formData.get("postDueReminderFrequencyDays")) || 7
-    ),
+    legalName: parsed.data.legalName,
+    businessNumber: parsed.data.businessNumber,
+    payrollProgramAccount: parsed.data.payrollProgramAccount,
+    addressLine1: parsed.data.addressLine1,
+    addressLine2: parsed.data.addressLine2,
+    city: parsed.data.city,
+    provinceCode: parsed.data.provinceCode,
+    postalCode: parsed.data.postalCode,
+    countryCode: parsed.data.countryCode,
+    remitterType: parsed.data.remitterType,
+    contactName: parsed.data.contactName,
+    contactPhone: parsed.data.contactPhone,
+    contactPhoneExtension: parsed.data.contactPhoneExtension,
+    contactEmail: parsed.data.contactEmail,
+    transmitterAccountNumber: parsed.data.transmitterAccountNumber,
+    transmitterRepId: parsed.data.transmitterRepId,
+    submissionLanguageCode: parsed.data.submissionLanguageCode,
+    preDueReminderDays: parsed.data.preDueReminderDays,
+    postDueReminderFrequencyDays: parsed.data.postDueReminderFrequencyDays,
   });
 
   await syncRemittancesForCompany(company.id);

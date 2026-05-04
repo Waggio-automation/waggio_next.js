@@ -2,7 +2,13 @@ import { promises as fs } from "fs";
 import path from "path";
 import puppeteer from "puppeteer";
 import type { Browser } from "puppeteer";
-import { Prisma, RemittanceStatus, RemitterType, ReminderState, T4GenerationStatus } from "@prisma/client";
+import {
+  Prisma,
+  RemittanceStatus,
+  RemitterType,
+  ReminderState,
+  T4GenerationStatus,
+} from "@prisma/client";
 import {
   buildT4SubmissionXml,
   renderEmployeeT4SlipHtml,
@@ -475,13 +481,17 @@ export async function updateCompanyPayrollSettings(
   }
 ) {
   await getOrCreateCompanyPayrollSettings(companyId);
+  const nextBusinessNumber = normalizeOptionalText(input.businessNumber);
+  const nextPayrollProgramAccount = normalizeUpperText(input.payrollProgramAccount);
+  const nextTransmitterAccountNumber = normalizeUpperText(input.transmitterAccountNumber);
+  const nextTransmitterRepId = normalizeUpperText(input.transmitterRepId);
 
   const updated = await prisma.companyPayrollSettings.update({
     where: { companyId },
     data: {
       legalName: normalizeOptionalText(input.legalName),
-      businessNumber: normalizeOptionalText(input.businessNumber),
-      payrollProgramAccount: normalizeUpperText(input.payrollProgramAccount),
+      businessNumber: nextBusinessNumber,
+      payrollProgramAccount: nextPayrollProgramAccount,
       addressLine1: normalizeOptionalText(input.addressLine1),
       addressLine2: normalizeOptionalText(input.addressLine2),
       city: normalizeOptionalText(input.city),
@@ -493,8 +503,8 @@ export async function updateCompanyPayrollSettings(
       contactPhone: normalizeOptionalText(input.contactPhone),
       contactPhoneExtension: normalizeOptionalText(input.contactPhoneExtension),
       contactEmail: normalizeOptionalText(input.contactEmail),
-      transmitterAccountNumber: normalizeUpperText(input.transmitterAccountNumber),
-      transmitterRepId: normalizeUpperText(input.transmitterRepId),
+      transmitterAccountNumber: nextTransmitterAccountNumber,
+      transmitterRepId: nextTransmitterRepId,
       submissionLanguageCode: normalizeUpperText(input.submissionLanguageCode, "E"),
       preDueReminderDays: input.preDueReminderDays ?? undefined,
       postDueReminderFrequencyDays: input.postDueReminderFrequencyDays ?? undefined,
