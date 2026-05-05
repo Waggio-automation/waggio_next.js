@@ -21,7 +21,14 @@ function serializeBigInt<T>(value: T): T {
 }
 
 export async function GET(req: NextRequest) {
-  const company = await requireCompanyAdminOrRedirect();
+  const n8nSecret = process.env.N8N_SECRET;
+  const providedSecret = req.headers.get("x-n8n-secret");
+  const isN8nRequest = Boolean(n8nSecret) && providedSecret === n8nSecret;
+
+  const companyId = isN8nRequest
+    ? null
+    : (await requireCompanyAdminOrRedirect()).id;
+
   const status = req.nextUrl.searchParams.get("status");
 
   if (status && !VALID_PAYROLL_RUN_STATUSES.includes(status as (typeof VALID_PAYROLL_RUN_STATUSES)[number])) {
@@ -30,7 +37,7 @@ export async function GET(req: NextRequest) {
 
   const data = await prisma.payrollRun.findMany({
     where: {
-      companyId: company.id,
+      ...(companyId === null ? {} : { companyId }),
       ...(status ? { status: status as (typeof VALID_PAYROLL_RUN_STATUSES)[number] } : {}),
     },
     include: {

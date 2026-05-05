@@ -11,10 +11,17 @@ function serializeBigInt<T>(value: T): T {
 }
 
 export async function GET(
-  _: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const company = await requireCompanyAdminOrRedirect();
+  const n8nSecret = process.env.N8N_SECRET;
+  const providedSecret = req.headers.get("x-n8n-secret");
+  const isN8nRequest = Boolean(n8nSecret) && providedSecret === n8nSecret;
+
+  const companyId = isN8nRequest
+    ? null
+    : (await requireCompanyAdminOrRedirect()).id;
+
   const { id } = await params;
 
   let payrollRunId: bigint;
@@ -25,7 +32,10 @@ export async function GET(
   }
 
   const payrollRun = await prisma.payrollRun.findUnique({
-    where: { id: payrollRunId, companyId: company.id },
+    where: {
+      id: payrollRunId,
+      ...(companyId === null ? {} : { companyId }),
+    },
     include: {
       payHistory: {
         include: {
