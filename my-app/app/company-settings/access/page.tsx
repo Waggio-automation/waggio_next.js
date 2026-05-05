@@ -1,11 +1,7 @@
 import Link from "next/link";
 import AccessForm from "./AccessForm";
-import { prisma } from "@/lib/prisma";
 
 export default async function CompanyAccessPage() {
-  const accountCount = await prisma.companyUser.count();
-  const hasExistingAccount = accountCount > 0;
-
   return (
     <main className="mx-auto w-full max-w-xl px-6 py-8 space-y-6">
       <header className="space-y-2">
@@ -18,18 +14,14 @@ export default async function CompanyAccessPage() {
         </Link>
         <div>
           <p className="text-sm text-gray-500">Account Access</p>
-          <h1 className="text-2xl font-semibold">
-            {hasExistingAccount ? "Log in to your workspace" : "Create your owner account"}
-          </h1>
+          <h1 className="text-2xl font-semibold">Create or access your workspace</h1>
           <p className="mt-1 text-sm text-gray-500">
-            {hasExistingAccount
-              ? "Use the email and password for your payroll workspace."
-              : "Create the first owner account, then choose a plan in Company Settings before using payroll."}
+            Sign up to create a new company workspace, or log in to an existing one.
           </p>
         </div>
       </header>
 
-      <AccessForm hasExistingAccount={hasExistingAccount} />
+      <AccessForm />
     </main>
   );
 }

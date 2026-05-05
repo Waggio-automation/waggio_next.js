@@ -4,6 +4,7 @@
 import { useMemo, useState, useRef, useEffect, Fragment  } from "react";
 import PeriodRangePicker from "./components/PeriodRangePicker";
 import { getOntarioHolidaysInRange } from "@/lib/ontarioHolidays";
+import PlanRequiredButton from "@/app/components/PlanRequiredButton";
 
 type EmployeeRow = {
   id: string;
@@ -78,7 +79,13 @@ function DateField({
   );
 }
 
-export default function HoursTable({ employees }: { employees: EmployeeRow[] }) {
+export default function HoursTable({
+  employees,
+  hasSelectedPlan,
+}: {
+  employees: EmployeeRow[];
+  hasSelectedPlan: boolean;
+}) {
   const [rowsState, setRowsState] = useState<Record<string, RowState>>(() =>
     Object.fromEntries(
       employees.map((e) => [
@@ -694,13 +701,14 @@ export default function HoursTable({ employees }: { employees: EmployeeRow[] }) 
               blank.
             </p>
 
-            <button
+            <PlanRequiredButton
+              hasSelectedPlan={hasSelectedPlan}
               onClick={saveSelectedToPayHistory}
               disabled={submitting}
               className="rounded-full bg-gray-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? "Saving..." : "Create Paystub & Save"}
-            </button>
+            </PlanRequiredButton>
           </div>
 
           {msg.err && <span className="text-sm text-red-600">{msg.err}</span>}

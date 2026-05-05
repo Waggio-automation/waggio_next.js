@@ -2,6 +2,7 @@ import { RemitterType } from "@prisma/client";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 import { getMissingT4FilingSettings, getOrCreateCompanyPayrollSettings } from "@/lib/cra";
 import { saveCraSettingsAction } from "../actions";
+import PlanRequiredButton from "@/app/components/PlanRequiredButton";
 
 const remitterTypeOptions: Array<{ value: RemitterType; label: string; help: string }> = [
   {
@@ -38,6 +39,7 @@ export default async function CraSettingsPage({
     searchParams ?? Promise.resolve({} as { error?: string; success?: string }),
   ]);
   const showT4Error = resolvedSearchParams.error === "t4-settings-incomplete";
+  const showInvalidSettingsError = resolvedSearchParams.error === "invalid-settings";
   const showSuccessMessage = resolvedSearchParams.success === "saved";
 
   return (
@@ -54,12 +56,16 @@ export default async function CraSettingsPage({
             T4 generation is blocked until these fields are filled: {missingT4Settings.join(", ")}.
           </div>
         ) : null}
+        {showInvalidSettingsError ? (
+          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+            CRA settings could not be saved. Check account numbers, contact details, and reminder day ranges.
+          </div>
+        ) : null}
         {showSuccessMessage ? (
           <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
             CRA settings saved successfully.
           </div>
         ) : null}
-
         <form action={saveCraSettingsAction} className="mt-6 grid gap-4 md:grid-cols-2">
           <label className="block">
             <span className="mb-1 block text-sm text-gray-600">Legal business name</span>
@@ -67,6 +73,8 @@ export default async function CraSettingsPage({
               type="text"
               name="legalName"
               defaultValue={settings.legalName ?? ""}
+              maxLength={120}
+              required
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
             />
           </label>
@@ -76,6 +84,10 @@ export default async function CraSettingsPage({
               type="text"
               name="businessNumber"
               defaultValue={settings.businessNumber ?? ""}
+              inputMode="numeric"
+              pattern="\d{9}"
+              maxLength={9}
+              title="Enter a 9-digit CRA business number."
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
             />
           </label>
@@ -86,6 +98,10 @@ export default async function CraSettingsPage({
               name="payrollProgramAccount"
               defaultValue={settings.payrollProgramAccount ?? ""}
               placeholder="Example: 123456789RP0001"
+              pattern="\d{9}[Rr][Pp]\d{4}"
+              maxLength={15}
+              required
+              title="Enter a payroll program account like 123456789RP0001."
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
             />
           </label>
@@ -94,6 +110,7 @@ export default async function CraSettingsPage({
             <select
               name="submissionLanguageCode"
               defaultValue={settings.submissionLanguageCode ?? "E"}
+              required
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
             >
               <option value="E">English</option>
@@ -106,6 +123,8 @@ export default async function CraSettingsPage({
               type="text"
               name="addressLine1"
               defaultValue={settings.addressLine1 ?? ""}
+              maxLength={60}
+              required
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
             />
           </label>
@@ -115,6 +134,7 @@ export default async function CraSettingsPage({
               type="text"
               name="addressLine2"
               defaultValue={settings.addressLine2 ?? ""}
+              maxLength={60}
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
             />
           </label>
@@ -124,6 +144,8 @@ export default async function CraSettingsPage({
               type="text"
               name="city"
               defaultValue={settings.city ?? ""}
+              maxLength={40}
+              required
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
             />
           </label>
@@ -133,6 +155,10 @@ export default async function CraSettingsPage({
               type="text"
               name="provinceCode"
               defaultValue={settings.provinceCode ?? "ON"}
+              pattern="[A-Za-z]{2}"
+              maxLength={2}
+              required
+              title="Enter a 2-letter province or territory code."
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
             />
           </label>
@@ -142,6 +168,10 @@ export default async function CraSettingsPage({
               type="text"
               name="postalCode"
               defaultValue={settings.postalCode ?? ""}
+              pattern="[A-Za-z]\d[A-Za-z][ ]?\d[A-Za-z]\d"
+              maxLength={7}
+              required
+              title="Enter a Canadian postal code like A1A 1A1."
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
             />
           </label>
@@ -151,6 +181,10 @@ export default async function CraSettingsPage({
               type="text"
               name="countryCode"
               defaultValue={settings.countryCode ?? "CAN"}
+              pattern="[A-Za-z]{3}"
+              maxLength={3}
+              required
+              title="Enter a 3-letter country code like CAN."
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
             />
           </label>
@@ -160,6 +194,8 @@ export default async function CraSettingsPage({
               type="email"
               name="contactEmail"
               defaultValue={settings.contactEmail ?? ""}
+              maxLength={254}
+              required
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
             />
           </label>
@@ -169,6 +205,8 @@ export default async function CraSettingsPage({
               type="text"
               name="contactName"
               defaultValue={settings.contactName ?? ""}
+              maxLength={60}
+              required
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
             />
           </label>
@@ -179,6 +217,11 @@ export default async function CraSettingsPage({
               name="contactPhone"
               defaultValue={settings.contactPhone ?? ""}
               placeholder="4165551234"
+              inputMode="tel"
+              maxLength={30}
+              pattern="[\d\s()+.-]{10,30}"
+              required
+              title="Enter a phone number with 10 to 15 digits."
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
             />
           </label>
@@ -188,6 +231,9 @@ export default async function CraSettingsPage({
               type="text"
               name="contactPhoneExtension"
               defaultValue={settings.contactPhoneExtension ?? ""}
+              inputMode="numeric"
+              pattern="\d{1,10}"
+              maxLength={10}
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
             />
           </label>
@@ -198,6 +244,9 @@ export default async function CraSettingsPage({
               name="transmitterAccountNumber"
               defaultValue={settings.transmitterAccountNumber ?? ""}
               placeholder="123456789RP0001"
+              pattern="\d{9}[Rr][Pp]\d{4}"
+              maxLength={15}
+              title="Enter a transmitter account number like 123456789RP0001."
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
             />
           </label>
@@ -207,6 +256,8 @@ export default async function CraSettingsPage({
               type="text"
               name="transmitterRepId"
               defaultValue={settings.transmitterRepId ?? ""}
+              pattern="[A-Za-z0-9-]{4,15}"
+              maxLength={15}
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
             />
           </label>
@@ -216,6 +267,7 @@ export default async function CraSettingsPage({
             <select
               name="remitterType"
               defaultValue={settings.remitterType}
+              required
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
             >
               {remitterTypeOptions.map((option) => (
@@ -231,6 +283,9 @@ export default async function CraSettingsPage({
             <input
               type="number"
               min="1"
+              max="365"
+              step="1"
+              required
               name="preDueReminderDays"
               defaultValue={settings.preDueReminderDays}
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
@@ -241,6 +296,9 @@ export default async function CraSettingsPage({
             <input
               type="number"
               min="1"
+              max="365"
+              step="1"
+              required
               name="postDueReminderFrequencyDays"
               defaultValue={settings.postDueReminderFrequencyDays}
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
@@ -248,12 +306,15 @@ export default async function CraSettingsPage({
           </label>
 
           <div className="md:col-span-2 flex justify-end">
-            <button
+            <PlanRequiredButton
+              hasSelectedPlan={Boolean(company.currentPlan)}
+              currentPlan={company.currentPlan}
+              requiredPlan="PRO"
               type="submit"
               className="rounded-full bg-gray-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
             >
               Save CRA settings
-            </button>
+            </PlanRequiredButton>
           </div>
         </form>
       </section>

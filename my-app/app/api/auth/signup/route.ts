@@ -13,6 +13,19 @@ function asString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function authServerError(error: unknown) {
+  console.error("Signup failed", error);
+  return NextResponse.json(
+    {
+      error:
+        process.env.NODE_ENV === "production"
+          ? "Unable to create the account right now. Please try again later."
+          : "Unable to create the account because the auth server could not reach its database or session config.",
+    },
+    { status: 500 }
+  );
+}
+
 export async function POST(req: NextRequest) {
   let payload: {
     companyName?: string;
@@ -46,62 +59,57 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const existingUserCount = await prisma.companyUser.count();
-  if (existingUserCount > 0) {
-    return NextResponse.json(
-      { error: "An account already exists for this workspace. Please log in instead." },
-      { status: 409 }
+  try {
+    const existingUser = await prisma.companyUser.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+    if (existingUser) {
+      return NextResponse.json(
+        { error: "An account already exists for this email. Please log in instead." },
+        { status: 409 }
+      );
+    }
+
+    const passwordHash = hashPassword(password);
+
+    const result = await prisma.$transaction(async (tx) => {
+      const company = await tx.company.create({
+        data: {
+          name: companyName,
+          adminEmail: email,
+        },
+      });
+
+      const user = await tx.companyUser.create({
+        data: {
+          companyId: company.id,
+          email,
+          passwordHash,
+          firstName: firstName || null,
+          lastName: lastName || null,
+          role: "OWNER",
+        },
+      });
+
+      return { company, user };
+    });
+
+    const res = NextResponse.json({
+      ok: true,
+      redirectTo: "/?setup=account_created",
+    });
+    res.cookies.set(
+      getSessionCookieName(),
+      createAdminSessionCookieValue({
+        companyId: result.company.id,
+        userId: result.user.id,
+      }),
+      getSessionCookieOptions()
     );
+
+    return res;
+  } catch (error) {
+    return authServerError(error);
   }
-
-  const passwordHash = hashPassword(password);
-
-  const result = await prisma.$transaction(async (tx) => {
-    const existingCompany = await tx.company.findFirst({
-      orderBy: { id: "asc" },
-    });
-
-    const company = existingCompany
-      ? await tx.company.update({
-          where: { id: existingCompany.id },
-          data: {
-            name: companyName,
-            adminEmail: email,
-          },
-        })
-      : await tx.company.create({
-          data: {
-            name: companyName,
-            adminEmail: email,
-          },
-        });
-
-    const user = await tx.companyUser.create({
-      data: {
-        companyId: company.id,
-        email,
-        passwordHash,
-        firstName: firstName || null,
-        lastName: lastName || null,
-        role: "OWNER",
-      },
-    });
-
-    return { company, user };
-  });
-
-  const res = NextResponse.json({
-    ok: true,
-    redirectTo: "/company-settings?setup=account_created",
-  });
-  res.cookies.set(
-    getSessionCookieName(),
-    createAdminSessionCookieValue({
-      companyId: result.company.id,
-      userId: result.user.id,
-    }),
-    getSessionCookieOptions()
-  );
-
-  return res;
 }

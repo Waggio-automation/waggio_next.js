@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { updateEmployeeCraProfileAction } from "../actions";
 import PaymentStatusCard from "./payment-status-card";
+import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
+import PlanRequiredButton from "@/app/components/PlanRequiredButton";
 
 function toUiPayoutStatus(status: string) {
   switch (status) {
@@ -25,6 +27,7 @@ export default async function EmployeeDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const company = await requireCompanyAdminOrRedirect();
 
   let employeeId: bigint;
   try {
@@ -34,7 +37,7 @@ export default async function EmployeeDetailPage({
   }
 
   const employee = await prisma.employee.findUnique({
-    where: { id: employeeId },
+    where: { id: employeeId, companyId: company.id },
     select: {
       id: true,
       firstName: true,
@@ -137,12 +140,15 @@ export default async function EmployeeDetailPage({
           </label>
 
           <div className="md:col-span-2 flex justify-end">
-            <button
+            <PlanRequiredButton
+              hasSelectedPlan={Boolean(company.currentPlan)}
+              currentPlan={company.currentPlan}
+              requiredPlan="PRO"
               type="submit"
               className="rounded-full bg-gray-900 px-6 py-3 text-sm font-medium text-white transition hover:bg-gray-800"
             >
               Save CRA / T4 profile
-            </button>
+            </PlanRequiredButton>
           </div>
         </form>
       </section>
@@ -153,6 +159,7 @@ export default async function EmployeeDetailPage({
         initialMethod={
           employee.trolleyRecipientAccountType === "paypal" ? "paypal" : "bank-transfer"
         }
+        hasSelectedPlan={Boolean(company.currentPlan)}
       />
     </main>
   );

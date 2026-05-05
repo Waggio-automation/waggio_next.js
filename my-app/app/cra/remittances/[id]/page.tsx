@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 import { markRemittancePaidAction } from "../../actions";
+import PlanRequiredButton from "@/app/components/PlanRequiredButton";
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("en-CA", {
@@ -248,12 +249,15 @@ export default async function RemittanceDetailPage({
                     className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
                   />
                 </label>
-                <button
+                <PlanRequiredButton
+                  hasSelectedPlan={Boolean(company.currentPlan)}
+                  currentPlan={company.currentPlan}
+                  requiredPlan="PRO"
                   type="submit"
                   className="w-full rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
                 >
                   {totalPaid > 0 ? "Record payment" : "Mark as paid"}
-                </button>
+                </PlanRequiredButton>
               </form>
             ) : null}
           </section>

@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { calculatePayrollAmounts } from "@/lib/payroll/calculatePayroll";
+import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 
 const itemSchema = z.object({
   employeeId: z.string().min(1),
@@ -23,6 +24,13 @@ const runSchema = z.object({
 
 export async function POST(req: Request) {
   try {
+    const company = await requireCompanyAdminOrRedirect();
+    if (!company.currentPlan) {
+      return NextResponse.json(
+        { error: "Choose a plan before creating paystubs." },
+        { status: 402 }
+      );
+    }
     const json = await req.json().catch(() => null);
     if (!json) {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
@@ -39,14 +47,20 @@ export async function POST(req: Request) {
     const { items, payDate, periodStart, periodEnd, sendAt, timezone } = parsed.data;
 
     const payrollRun = await prisma.$transaction(async (tx) => {
-      const firstEmp = await tx.employee.findUnique({
-        where: { id: BigInt(items[0].employeeId) },
-        select: { companyId: true },
+      const employeeIds = items.map((item) => BigInt(item.employeeId));
+      const employeeCount = await tx.employee.count({
+        where: {
+          id: { in: employeeIds },
+          companyId: company.id,
+        },
       });
+      if (employeeCount !== employeeIds.length) {
+        throw new Error("One or more selected employees do not belong to this company.");
+      }
 
       const createdRun = await tx.payrollRun.create({
         data: {
-          companyId: firstEmp?.companyId ?? null,
+          companyId: company.id,
           payDate: new Date(payDate),
           sendAt: new Date(sendAt),
           status: "SCHEDULED" ,
@@ -63,7 +77,7 @@ export async function POST(req: Request) {
       for (const it of items) {
         const empIdBig = BigInt(it.employeeId);
         const emp = await tx.employee.findUnique({
-          where: { id: empIdBig },
+          where: { id: empIdBig, companyId: company.id },
           select: {
             id: true,
             payType: true,

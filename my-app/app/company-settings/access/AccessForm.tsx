@@ -3,7 +3,7 @@
 import { FormEvent, KeyboardEvent, useState } from "react";
 
 type AccessFormProps = {
-  hasExistingAccount: boolean;
+  defaultMode?: SubmitMode;
 };
 
 type SubmitMode = "signup" | "login";
@@ -30,9 +30,8 @@ function getPasswordStrength(password: string) {
   return { label: "Strong", tone: "text-emerald-600" };
 }
 
-export default function AccessForm({ hasExistingAccount }: AccessFormProps) {
-  const initialMode: SubmitMode = hasExistingAccount ? "login" : "signup";
-  const [mode, setMode] = useState<SubmitMode>(initialMode);
+export default function AccessForm({ defaultMode = "signup" }: AccessFormProps) {
+  const [mode, setMode] = useState<SubmitMode>(defaultMode);
   const [companyName, setCompanyName] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -92,10 +91,9 @@ export default function AccessForm({ hasExistingAccount }: AccessFormProps) {
         <button
           type="button"
           onClick={() => setMode("signup")}
-          disabled={hasExistingAccount}
           className={`rounded-full px-4 py-2 ${
             mode === "signup" ? "bg-gray-900 text-white" : "text-gray-600"
-          } ${hasExistingAccount ? "cursor-not-allowed opacity-50" : ""}`}
+          }`}
         >
           Sign up
         </button>
@@ -186,7 +184,11 @@ export default function AccessForm({ hasExistingAccount }: AccessFormProps) {
             </button>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
-            <span className={passwordStrength.tone}>Password strength: {passwordStrength.label}</span>
+            {mode === "signup" ? (
+              <span className={passwordStrength.tone}>
+                Password strength: {passwordStrength.label}
+              </span>
+            ) : null}
             {capsLockOn ? <span className="text-amber-600">Caps Lock is on</span> : null}
           </div>
         </label>
@@ -230,7 +232,7 @@ export default function AccessForm({ hasExistingAccount }: AccessFormProps) {
 
         {mode === "signup" ? (
           <p className="text-xs text-gray-500">
-            After sign-up, you will be redirected to Company Settings to choose Basic or Pro.
+            After sign-up, you can choose Basic or Pro when you open a payroll or CRA workflow.
           </p>
         ) : null}
 

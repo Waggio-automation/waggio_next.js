@@ -12,6 +12,19 @@ function asString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function authServerError(error: unknown) {
+  console.error("Login failed", error);
+  return NextResponse.json(
+    {
+      error:
+        process.env.NODE_ENV === "production"
+          ? "Unable to sign in right now. Please try again later."
+          : "Unable to sign in because the auth server could not reach its database or session config.",
+    },
+    { status: 500 }
+  );
+}
+
 export async function POST(req: NextRequest) {
   let payload: { email?: string; password?: string };
   try {
@@ -27,28 +40,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
   }
 
-  const user = await prisma.companyUser.findUnique({
-    where: { email },
-    include: { company: true },
-  });
-  if (!user || !verifyPassword(password, user.passwordHash)) {
-    return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
+  try {
+    const user = await prisma.companyUser.findUnique({
+      where: { email },
+      include: { company: true },
+    });
+    if (!user || !verifyPassword(password, user.passwordHash)) {
+      return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
+    }
+
+    const res = NextResponse.json({
+      ok: true,
+      redirectTo: "/?setup=login_success",
+    });
+    res.cookies.set(
+      getSessionCookieName(),
+      createAdminSessionCookieValue({
+        companyId: user.companyId,
+        userId: user.id,
+      }),
+      getSessionCookieOptions()
+    );
+
+    return res;
+  } catch (error) {
+    return authServerError(error);
   }
-
-  const res = NextResponse.json({
-    ok: true,
-    redirectTo: user.company.currentPlan
-      ? "/company-settings?setup=login_success"
-      : "/company-settings?setup=plan_required",
-  });
-  res.cookies.set(
-    getSessionCookieName(),
-    createAdminSessionCookieValue({
-      companyId: user.companyId,
-      userId: user.id,
-    }),
-    getSessionCookieOptions()
-  );
-
-  return res;
 }

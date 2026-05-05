@@ -4,6 +4,7 @@ import HoursTable from "./hours-table";
 import Link from "next/link";
 import PayrollStatusBlock from "./payroll-status-block";
 import { toPayrollStatusUi } from "@/lib/payments/payroll-status";
+import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 
 type PayrollRunMeta = {
   employeeIds?: string[];
@@ -19,8 +20,10 @@ function getFirstEmployeeId(meta: unknown) {
 export const dynamic = "force-dynamic";
 
 export default async function PayrollPage() {
+  const company = await requireCompanyAdminOrRedirect();
   const [rows, payrollRuns] = await Promise.all([
     prisma.employee.findMany({
+      where: { companyId: company.id },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
@@ -37,6 +40,7 @@ export default async function PayrollPage() {
       },
     }),
     prisma.payrollRun.findMany({
+      where: { companyId: company.id },
       orderBy: { createdAt: "desc" },
       take: 8,
       select: {
@@ -107,7 +111,7 @@ export default async function PayrollPage() {
       </header>
 
       <PayrollStatusBlock runs={payrollStatusRows} />
-      <HoursTable employees={employees} />
+      <HoursTable employees={employees} hasSelectedPlan={Boolean(company.currentPlan)} />
     </main>
   );
 }

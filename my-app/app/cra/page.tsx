@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
-import { getCraDashboard, getReminderState } from "@/lib/cra";
+import { getCraDashboard, getMissingT4FilingSettings, getReminderState } from "@/lib/cra";
 import { generateT4Action, syncRemittancesAction } from "./actions";
+import PlanRequiredButton from "@/app/components/PlanRequiredButton";
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("en-CA", {
@@ -98,8 +99,13 @@ function getAuditLogHref(entry: {
 
 export default async function CraDashboardPage() {
   const company = await requireCompanyAdminOrRedirect();
-  const dashboard = await getCraDashboard(company.id);
+  const [dashboard, missingT4Settings] = await Promise.all([
+    getCraDashboard(company.id),
+    getMissingT4FilingSettings(company.id),
+  ]);
   const currentYear = new Date().getFullYear();
+  const hasSelectedPlan = Boolean(company.currentPlan);
+  const t4Ready = missingT4Settings.length === 0;
 
   return (
     <div className="space-y-6">
@@ -143,12 +149,15 @@ export default async function CraDashboardPage() {
               </p>
             </div>
             <form action={syncRemittancesAction}>
-              <button
+              <PlanRequiredButton
+                hasSelectedPlan={hasSelectedPlan}
+                currentPlan={company.currentPlan}
+                requiredPlan="PRO"
                 type="submit"
                 className="rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
               >
                 Refresh remittances
-              </button>
+              </PlanRequiredButton>
             </form>
           </div>
 
@@ -208,6 +217,11 @@ export default async function CraDashboardPage() {
             <p className="mt-2 text-sm text-gray-600">
               Generate T4 slips and your T4 summary after the year is complete.
             </p>
+            {!t4Ready ? (
+              <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                T4 generation is blocked until these settings are resolved: {missingT4Settings.join(", ")}.
+              </div>
+            ) : null}
             <form action={generateT4Action} className="mt-4 space-y-3">
               <input
                 type="number"
@@ -215,12 +229,16 @@ export default async function CraDashboardPage() {
                 defaultValue={currentYear}
                 className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
               />
-              <button
+              <PlanRequiredButton
+                hasSelectedPlan={hasSelectedPlan}
+                currentPlan={company.currentPlan}
+                requiredPlan="PRO"
                 type="submit"
-                className="w-full rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+                disabled={!t4Ready}
+                className="w-full rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-400"
               >
                 Generate T4 package
-              </button>
+              </PlanRequiredButton>
             </form>
             <Link href="/cra/t4" className="mt-4 inline-block text-sm font-medium text-gray-900 underline">
               Review T4 records

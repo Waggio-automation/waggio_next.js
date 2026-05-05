@@ -37,6 +37,7 @@ model Employee {
   createdAt                   DateTime               @default(now())
   updatedAt                   DateTime               @updatedAt
   trolleyRecipientId          String?                @unique
+  trolleyReferenceId          String?                @unique
   payoutEnabled               Boolean                @default(false)
   payoutSetupStatus           PayoutSetupStatus      @default(REQUIRED)
   companyId                   BigInt?
@@ -47,6 +48,7 @@ model Employee {
   t4Slips                     T4Slip[]
 
   @@index([companyId])
+  @@index([companyId, trolleyReferenceId])
   @@index([email, hireDate])
 }
 
@@ -119,6 +121,7 @@ model Company {
   id                  BigInt                  @id @default(autoincrement())
   name                String?
   adminEmail          String
+  trolleyTenantKey    String?                 @unique
   adminTokenHash      String?
   adminTokenCreatedAt DateTime?
   currentPlan         CompanyPlan?

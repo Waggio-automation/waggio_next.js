@@ -3,8 +3,9 @@
 import { useActionState, useState } from "react";
 import { createEmployee } from "./actions";
 import PayTypeFields from "./pay-type-fields";
+import PlanRequiredButton from "@/app/components/PlanRequiredButton";
 
-export default function CreateEmployeeForm() {
+export default function CreateEmployeeForm({ hasSelectedPlan }: { hasSelectedPlan: boolean }) {
   const [state, action] = useActionState(createEmployee, null);
   const errors = state && "errors" in state ? state.errors : {};
 
@@ -196,12 +197,13 @@ export default function CreateEmployeeForm() {
             />
           </label>
         </div>
-        <button
+        <PlanRequiredButton
+          hasSelectedPlan={hasSelectedPlan}
           type="submit"
           className="rounded-full bg-gray-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
         >
           Create
-        </button>
+        </PlanRequiredButton>
       </form>
     </section>
   );

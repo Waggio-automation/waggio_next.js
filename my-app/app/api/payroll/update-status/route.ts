@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { PayHistoryStatus, Prisma } from "@prisma/client";
+import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 
 type ScheduleBody = {
   employeeIds: (string | number)[];
@@ -57,6 +58,13 @@ function toIsoAtLocalTime(date: string, time: string, tz: string) {
 
 export async function POST(req: Request) {
   try {
+    const company = await requireCompanyAdminOrRedirect();
+    if (!company.currentPlan) {
+      return NextResponse.json(
+        { error: "Choose a plan before updating payroll." },
+        { status: 402 }
+      );
+    }
     const body = await safeJson<UpdateBody>(req);
 
     const schedule: ScheduleBody | undefined =
@@ -77,6 +85,7 @@ export async function POST(req: Request) {
       const { sendAt, ...scheduleMeta } = schedule;
       const payrollRun = await prisma.payrollRun.create({
         data: {
+          companyId: company.id,
           payDate: new Date(schedule.payDate),
           sendAt: sendAt ? new Date(sendAt) : null,
           status: "SCHEDULED",
@@ -173,7 +182,10 @@ export async function POST(req: Request) {
 
     const validIds = ids.map((x) => BigInt(x));
     await prisma.payHistory.updateMany({
-      where: { id: { in: validIds } },
+      where: {
+        id: { in: validIds },
+        employee: { companyId: company.id },
+      },
       data: { status: nextStatus },
     });
 
