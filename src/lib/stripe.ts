@@ -39,7 +39,7 @@ let stripeClient: Stripe | null = null;
 export function getStripeClient() {
   if (!stripeClient) {
     stripeClient = new Stripe(getStripeSecretKey(), {
-      apiVersion: "2026-03-25.dahlia",
+      apiVersion: "2026-04-22.dahlia",
     });
   }
   return stripeClient;

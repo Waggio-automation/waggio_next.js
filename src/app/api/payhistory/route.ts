@@ -28,7 +28,14 @@ function serializeBigInt<T>(value: T): T {
 }
 
 export async function GET(req: NextRequest) {
-  const company = await requireCompanyAdminOrRedirect();
+  const n8nSecret = process.env.N8N_SECRET;
+  const providedSecret = req.headers.get("x-n8n-secret");
+  const isN8nRequest = Boolean(n8nSecret) && providedSecret === n8nSecret;
+
+  const companyId = isN8nRequest
+    ? null
+    : (await requireCompanyAdminOrRedirect()).id;
+
   const payrollRunId = req.nextUrl.searchParams.get("payrollRunId");
   if (!payrollRunId) {
     return NextResponse.json({ error: "Missing payrollRunId query parameter" }, { status: 400 });
@@ -44,7 +51,7 @@ export async function GET(req: NextRequest) {
   const data = await prisma.payHistory.findMany({
     where: {
       payrollRunId: payrollRunIdBigInt,
-      employee: { companyId: company.id },
+      ...(companyId === null ? {} : { employee: { companyId } }),
     },
     include: { employee: true },
   });
@@ -131,13 +138,22 @@ const statusPatchSchema = z.object({
 });
 
 export async function PATCH(req: NextRequest) {
-  const company = await requireCompanyAdminOrRedirect();
-  if (!company.currentPlan) {
-    return NextResponse.json(
-      { error: "Choose a plan before updating pay history." },
-      { status: 402 }
-    );
+  const n8nSecret = process.env.N8N_SECRET;
+  const providedSecret = req.headers.get("x-n8n-secret");
+  const isN8nRequest = Boolean(n8nSecret) && providedSecret === n8nSecret;
+
+  let companyId: bigint | null = null;
+  if (!isN8nRequest) {
+    const company = await requireCompanyAdminOrRedirect();
+    if (!company.currentPlan) {
+      return NextResponse.json(
+        { error: "Choose a plan before updating pay history." },
+        { status: 402 }
+      );
+    }
+    companyId = company.id;
   }
+
   const json = await req.json();
   const parsed = statusPatchSchema.safeParse(json);
   if (!parsed.success) {
@@ -167,7 +183,7 @@ export async function PATCH(req: NextRequest) {
   const updated = await prisma.payHistory.updateMany({
     where: {
       id: { in: idList },
-      employee: { companyId: company.id },
+      ...(companyId === null ? {} : { employee: { companyId } }),
     },
     data: updateData,
   });
