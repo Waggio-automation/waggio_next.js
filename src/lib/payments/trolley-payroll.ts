@@ -205,8 +205,9 @@ export async function sendPayrollRunToTrolley(
 
   for (const row of run.payHistory) {
     const payment = await createPayment(batch.id, {
-      recipientId: row.employee.trolleyRecipientId!,
-      recipientAccountId: row.employee.trolleyRecipientAccountId!,
+      recipient: {
+        id: row.employee.trolleyRecipientId!,
+      },
       amount: formatAmount(row.netPay),
       currency: payoutCurrency,
       description: `Net payroll for ${row.employee.firstName} ${row.employee.lastName}`,
