@@ -54,8 +54,9 @@ export async function createIndividualBankTransferPayoutExample() {
   const batch = await trolley.createBatch(batchInput);
 
   const paymentInput: CreatePaymentInput = {
-    recipientId: recipient.id,
-    recipientAccountId: account.id,
+    recipient: {
+      id: recipient.id,
+    },
     amount: "1850.75",
     currency: "CAD",
     description: "Net payroll for Avery Martin",

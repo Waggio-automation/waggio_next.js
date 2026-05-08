@@ -144,8 +144,11 @@ export interface Batch {
 }
 
 export interface CreatePaymentInput {
-  recipientId: string;
-  recipientAccountId?: string;
+  recipient: {
+    id?: string;
+    email?: string;
+    referenceId?: string;
+  };
   amount: string;
   currency: CurrencyCode;
   description?: string;
