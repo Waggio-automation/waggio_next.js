@@ -54,6 +54,18 @@ export default function CreateEmployeeForm({ hasSelectedPlan }: { hasSelectedPla
               className={fieldClassName}
             />
           </label>
+          <label className={labelClassName}>
+            <span>Employee Number</span>
+            <input name="employeeNumber" className={fieldClassName} />
+          </label>
+          <label className={labelClassName}>
+            <span>Department</span>
+            <input name="department" className={fieldClassName} />
+          </label>
+          <label className={`${labelClassName} col-span-2`}>
+            <span>Job Title</span>
+            <input name="jobTitle" className={fieldClassName} />
+          </label>
           <label className={`${labelClassName} col-span-2`}>
             <span>SIN (9 digits) *</span>
             <input
@@ -196,6 +208,19 @@ export default function CreateEmployeeForm({ hasSelectedPlan }: { hasSelectedPla
               className={fieldClassName}
             />
           </label>
+        </div>
+        <div className="space-y-3 border-t border-gray-200 pt-4">
+          <h3 className="text-sm font-semibold text-gray-900">Direct Deposit</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <label className={labelClassName}>
+              <span>Bank Transit #</span>
+              <input name="bankTransit" className={fieldClassName} />
+            </label>
+            <label className={labelClassName}>
+              <span>Account #</span>
+              <input name="bankAccount" className={fieldClassName} />
+            </label>
+          </div>
         </div>
         <PlanRequiredButton
           hasSelectedPlan={hasSelectedPlan}

@@ -48,6 +48,11 @@ export async function createEmployee(prevState: CreateEmployeeState, formData: F
       firstName: parsed.data.firstName,
       lastName : parsed.data.lastName,
       email    : parsed.data.email,
+      employeeNumber: parsed.data.employeeNumber?.trim() || null,
+      department: parsed.data.department?.trim() || null,
+      jobTitle: parsed.data.jobTitle?.trim() || null,
+      bankTransit: parsed.data.bankTransit?.trim() || null,
+      bankAccount: parsed.data.bankAccount?.trim() || null,
       sin      : encryptSin(parsed.data.sin),
       dentalBenefitsCoverage: parsed.data.dentalBenefitsCoverage,
 

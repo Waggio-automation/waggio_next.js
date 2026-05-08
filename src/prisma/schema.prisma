@@ -12,6 +12,11 @@ model Employee {
   firstName                   String
   lastName                    String
   email                       String
+  employeeNumber              String?
+  department                  String?
+  jobTitle                    String?
+  bankTransit                 String?
+  bankAccount                 String?
   sin                         String
   dentalBenefitsCoverage      DentalBenefitsCoverage @default(NONE)
   paymentMethod               PaymentMethod          @default(CHEQUE)
@@ -81,6 +86,9 @@ model PayHistory {
   emailSentAt           DateTime?
   status                PayHistoryStatus       @default(PENDING)
   pdfUrl                String?
+  periodStart           DateTime?
+  periodEnd             DateTime?
+  sequenceNumber        String?
   employee              Employee               @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   payrollRun            PayrollRun?            @relation(fields: [payrollRunId], references: [id], onDelete: SetNull)
   remittanceAllocations RemittancePayHistory[]
@@ -121,6 +129,11 @@ model Company {
   id                  BigInt                  @id @default(autoincrement())
   name                String?
   adminEmail          String
+  addrLine1           String?
+  addrLine2           String?
+  addrCity            String?
+  addrProvince        String?
+  addrPostal          String?
   trolleyTenantKey    String?                 @unique
   adminTokenHash      String?
   adminTokenCreatedAt DateTime?

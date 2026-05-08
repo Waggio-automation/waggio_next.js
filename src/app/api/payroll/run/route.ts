@@ -109,6 +109,8 @@ export async function POST(req: Request) {
             employeeId: emp.id,
             payrollRunId: createdRun.id,
             payDate: new Date(payDate),
+            periodStart: new Date(periodStart),
+            periodEnd: new Date(periodEnd),
             hoursWorked: emp.payType === "HOURLY" ? Number(it.hoursWorked ?? 0) : null,
             grossPay: amounts.grossPay,
             ded_cpp: amounts.ded_cpp,
