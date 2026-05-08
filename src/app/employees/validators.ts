@@ -64,8 +64,8 @@ export const employeeInputSchema = z.object({
 
   vacationPay: decimalLike.default(4),
   bonus: decimalLike.default(0),
-  federalTD1: decimalLike.default(15492),
-  provincialTD1: decimalLike.default(12298),
+  federalTD1: decimalLike.default(16452),
+  provincialTD1: decimalLike.default(12989),
 
   paymentMethod: PaymentMethod.default("DIRECT_DEPOSIT"),
 })

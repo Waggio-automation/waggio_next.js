@@ -36,6 +36,8 @@ export default async function PayrollPage() {
         salary: true,
         payGroup: true,
         vacationPay: true,
+        federalTD1: true,
+        provincialTD1: true,
         createdAt: true,
       },
     }),
@@ -66,6 +68,8 @@ export default async function PayrollPage() {
     salary: e.salary ? Number(e.salary) : null,
     payGroup: e.payGroup ?? "BI_WEEKLY",
     vacationPay: e.vacationPay != null ? Number(e.vacationPay) : 0,
+    federalTD1: Number(e.federalTD1 ?? 0),
+    provincialTD1: Number(e.provincialTD1 ?? 0),
     createdAt: e.createdAt.toISOString(),
   }));
 

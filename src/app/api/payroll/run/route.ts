@@ -85,6 +85,8 @@ export async function POST(req: Request) {
             salary: true,
             payGroup: true,
             vacationPay: true,
+            federalTD1: true,
+            provincialTD1: true,
           },
         });
 
@@ -102,6 +104,8 @@ export async function POST(req: Request) {
           overtime: it.overtime,
           holidayHours: it.holidayHours,
           includeVacation: it.includeVacation,
+          federalTD1: Number(emp.federalTD1 ?? 0),
+          provincialTD1: Number(emp.provincialTD1 ?? 0),
         });
 
         await tx.payHistory.create({
