@@ -37,8 +37,8 @@ model Employee {
   pensionAdjustmentOverride   Decimal?
   vacationPay                 Decimal                @default(4)
   bonus                       Decimal                @default(0)
-  federalTD1                  Decimal                @default(15492)
-  provincialTD1               Decimal                @default(12298)
+  federalTD1                  Decimal                @default(16452)
+  provincialTD1               Decimal                @default(12989)
   createdAt                   DateTime               @default(now())
   updatedAt                   DateTime               @updatedAt
   trolleyRecipientId          String?                @unique

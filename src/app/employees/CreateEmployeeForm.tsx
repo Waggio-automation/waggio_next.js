@@ -194,7 +194,7 @@ export default function CreateEmployeeForm({ hasSelectedPlan }: { hasSelectedPla
               name="federalTD1"
               type="number"
               step="0.01"
-              defaultValue={15492}
+              defaultValue={16452}
               className={fieldClassName}
             />
           </label>
@@ -204,7 +204,7 @@ export default function CreateEmployeeForm({ hasSelectedPlan }: { hasSelectedPla
               name="provincialTD1"
               type="number"
               step="0.01"
-              defaultValue={12298}
+              defaultValue={12989}
               className={fieldClassName}
             />
           </label>

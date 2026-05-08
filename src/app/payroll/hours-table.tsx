@@ -5,6 +5,7 @@ import { useMemo, useState, useRef, useEffect, Fragment  } from "react";
 import PeriodRangePicker from "./components/PeriodRangePicker";
 import { getOntarioHolidaysInRange } from "@/lib/ontarioHolidays";
 import PlanRequiredButton from "@/app/components/PlanRequiredButton";
+import { calculatePayrollAmounts } from "@/lib/payroll/calculatePayroll";
 
 type EmployeeRow = {
   id: string;
@@ -17,6 +18,8 @@ type EmployeeRow = {
   salary: number | null;
   payGroup: "BI_WEEKLY" | "MONTHLY";
   vacationPay: number;
+  federalTD1: number;
+  provincialTD1: number;
   createdAt: string;
 };
 
@@ -28,17 +31,7 @@ type RowState = {
   holidayHours: number; // Hours worked during public holidays
 };
 
-const HOLIDAY_MULTIPLIER = 1.5; // Hourly rate multiplier for public holiday hours
-
-// === 2025 Ontario (preview) deduction rates ===
-// NOTE: This is an estimate/preview. Final paystub should be calculated/verified server-side.
-const CPP_RATE = 0.0595; // 5.95%
-const EI_RATE = 0.0166; // 1.66%
-const FEDERAL_TAX_RATE = 0.15; // First bracket (simplified)
-const PROV_TAX_RATE = 0.0505; // Ontario first bracket (simplified)
-const TOTAL_TAX_RATE = FEDERAL_TAX_RATE + PROV_TAX_RATE; // ~20.05%
-
-// Round to 2 decimals
+// Round to 2 decimals (used for totals).
 const r2 = (n: number) => Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
 
 function fmtDate(d: Date) {
@@ -144,49 +137,32 @@ export default function HoursTable({
 
   const rows = employees.map((e) => {
     const st = rowsState[e.id];
-    const rate = e.hourlyRate ?? 0;
 
-    let base = 0;
-
-    if (e.payType === "HOURLY") {
-      const totalHours = Number(st?.hours || 0);
-      const holidayHoursInput = Number(st?.holidayHours || 0);
-
-      // Keep holiday hours within [0, totalHours]
-      const holidayHours = Math.min(Math.max(holidayHoursInput, 0), Math.max(totalHours, 0));
-      const normalHours = Math.max(totalHours - holidayHours, 0);
-
-      const regularPay = rate * normalHours;
-      const holidayPay = rate * HOLIDAY_MULTIPLIER * holidayHours;
-      const overtimePay = rate * 1.5 * Number(st?.overtime || 0);
-
-      base = regularPay + holidayPay + overtimePay;
-    } else {
-      const sal = e.salary ?? 0;
-      base = e.payGroup === "BI_WEEKLY" ? sal / 26 : sal / 12;
-    }
-
-    const vacation = st?.includeVacation ? base * (e.vacationPay / 100) : 0;
-    const gross = base + vacation;
-
-    // Preview deductions (simplified)
-    const ded_cpp = r2(gross * CPP_RATE);
-    const ded_ei = r2(gross * EI_RATE);
-    const ded_tax = r2(gross * TOTAL_TAX_RATE);
-    const totalDeductions = r2(ded_cpp + ded_ei + ded_tax);
-    const netPay = r2(gross - totalDeductions);
+    const amounts = calculatePayrollAmounts({
+      payType: e.payType,
+      payGroup: e.payGroup,
+      hourlyRate: e.hourlyRate,
+      salary: e.salary,
+      vacationPay: e.vacationPay,
+      hoursWorked: e.payType === "HOURLY" ? Number(st?.hours ?? 0) : null,
+      overtime: e.payType === "HOURLY" ? Number(st?.overtime ?? 0) : 0,
+      holidayHours: e.payType === "HOURLY" ? Number(st?.holidayHours ?? 0) : 0,
+      includeVacation: !!st?.includeVacation,
+      federalTD1: e.federalTD1,
+      provincialTD1: e.provincialTD1,
+    });
 
     return {
       ...e,
       state: st,
-      base: r2(base),
-      vacation: r2(vacation),
-      gross: r2(gross),
-      ded_cpp,
-      ded_ei,
-      ded_tax,
-      totalDeductions,
-      netPay,
+      base: amounts.basePay,
+      vacation: amounts.vacationAmount,
+      gross: amounts.grossPay,
+      ded_cpp: amounts.ded_cpp,
+      ded_ei: amounts.ded_ei,
+      ded_tax: amounts.ded_tax,
+      totalDeductions: amounts.totalDeductions,
+      netPay: amounts.netPay,
     };
   });
 
