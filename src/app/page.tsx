@@ -23,7 +23,9 @@ export default async function HomePage({
   const params = await searchParams;
   const setupMessage = getSetupMessage(params.setup);
   const hasSelectedPlan = Boolean(company.currentPlan);
+  const hasProPlan = company.currentPlan === "PRO";
   const choosePlanHref = "/company-settings?setup=plan_required";
+  const upgradeHref = "/company-settings?setup=upgrade_required";
   const employeesHref = "/employees";
   const paystubHref = "/payroll";
   const craHref = "/cra";
@@ -179,25 +181,48 @@ export default async function HomePage({
           </div>
         </div>
 
-        <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="text-sm text-gray-500">CRA summary</div>
-          <div className="mt-3 space-y-2 text-sm">
-            <p className="text-3xl font-semibold text-gray-900">
-              {formatMoney.format(craDashboard.outstandingTotal.toNumber())}
-            </p>
-            <p className="text-gray-600">
-              {craDashboard.nextDue
-                ? `Next CRA payment due ${new Date(craDashboard.nextDue.dueDate).toLocaleDateString()}`
-                : "No open remittance yet"}
-            </p>
-            <Link
-              href={craHref}
-              className="inline-flex rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-            >
-              View CRA workspace
-            </Link>
+        {hasProPlan ? (
+          <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+            <div className="text-sm text-gray-500">CRA summary</div>
+            <div className="mt-3 space-y-2 text-sm">
+              <p className="text-3xl font-semibold text-gray-900">
+                {formatMoney.format(craDashboard.outstandingTotal.toNumber())}
+              </p>
+              <p className="text-gray-600">
+                {craDashboard.nextDue
+                  ? `Next CRA payment due ${new Date(craDashboard.nextDue.dueDate).toLocaleDateString()}`
+                  : "No open remittance yet"}
+              </p>
+              <Link
+                href={craHref}
+                className="inline-flex rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                View CRA workspace
+              </Link>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm text-gray-500">CRA summary</div>
+              <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
+                Pro
+              </span>
+            </div>
+            <div className="mt-3 space-y-3 text-sm">
+              <p className="text-2xl font-semibold text-gray-900">Available on Pro</p>
+              <p className="text-gray-600">
+                Upgrade to track CRA remittances, payment deadlines, and T4 filing from your dashboard.
+              </p>
+              <Link
+                href={hasSelectedPlan ? upgradeHref : choosePlanHref}
+                className="inline-flex rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                {hasSelectedPlan ? "Upgrade to Pro" : "Choose Pro"}
+              </Link>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="rounded-3xl border border-gray-200 bg-white shadow-sm overflow-hidden">
@@ -216,6 +241,7 @@ export default async function HomePage({
                 <th className="text-left p-3">Employment</th>
                 <th className="text-left p-3">Pay Type</th>
                 <th className="text-left p-3 pr-6">Hire Date</th>
+                <th className="text-left p-3 pr-6">Edit</th>
               </tr>
             </thead>
             <tbody>
@@ -230,11 +256,19 @@ export default async function HomePage({
                   <td className="p-3 pr-6 text-gray-700">
                     {new Date(e.hireDate).toLocaleDateString()}
                   </td>
+                  <td className="p-3 pr-6">
+                    <Link
+                      href={`/employees/${e.id.toString()}`}
+                      className="inline-flex rounded-full border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      Edit
+                    </Link>
+                  </td>
                 </tr>
               ))}
               {recentEmployees.length === 0 && (
                 <tr>
-                  <td className="p-6 text-center text-gray-500" colSpan={5}>
+                  <td className="p-6 text-center text-gray-500" colSpan={6}>
                     No employees yet.{" "}
                     <Link className="font-medium text-gray-900 underline" href={employeesHref}>
                       Create one

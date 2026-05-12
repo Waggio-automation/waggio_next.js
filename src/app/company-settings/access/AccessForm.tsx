@@ -30,7 +30,7 @@ function getPasswordStrength(password: string) {
   return { label: "Strong", tone: "text-emerald-600" };
 }
 
-export default function AccessForm({ defaultMode = "signup" }: AccessFormProps) {
+export default function AccessForm({ defaultMode = "login" }: AccessFormProps) {
   const [mode, setMode] = useState<SubmitMode>(defaultMode);
   const [companyName, setCompanyName] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -90,21 +90,21 @@ export default function AccessForm({ defaultMode = "signup" }: AccessFormProps) 
       <div className="inline-flex rounded-full border border-gray-200 bg-white p-1 text-sm">
         <button
           type="button"
-          onClick={() => setMode("signup")}
-          className={`rounded-full px-4 py-2 ${
-            mode === "signup" ? "bg-gray-900 text-white" : "text-gray-600"
-          }`}
-        >
-          Sign up
-        </button>
-        <button
-          type="button"
           onClick={() => setMode("login")}
           className={`rounded-full px-4 py-2 ${
             mode === "login" ? "bg-gray-900 text-white" : "text-gray-600"
           }`}
         >
           Log in
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("signup")}
+          className={`rounded-full px-4 py-2 ${
+            mode === "signup" ? "bg-gray-900 text-white" : "text-gray-600"
+          }`}
+        >
+          Sign up
         </button>
       </div>
 

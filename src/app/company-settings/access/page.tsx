@@ -14,9 +14,9 @@ export default async function CompanyAccessPage() {
         </Link>
         <div>
           <p className="text-sm text-gray-500">Account Access</p>
-          <h1 className="text-2xl font-semibold">Create or access your workspace</h1>
+          <h1 className="text-2xl font-semibold">Log in or create your workspace</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Sign up to create a new company workspace, or log in to an existing one.
+            Log in to an existing company workspace, or sign up to create a new one.
           </p>
         </div>
       </header>

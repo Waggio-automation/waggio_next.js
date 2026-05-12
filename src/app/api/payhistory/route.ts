@@ -84,7 +84,14 @@ export async function POST(req: NextRequest) {
       const emp = await tx.employee.findUnique({
         where: { id: empIdBig, companyId: company.id },
         select: {
-          id: true, payType: true, hourlyRate: true, salary: true, payGroup: true, vacationPay: true,
+          id: true,
+          payType: true,
+          hourlyRate: true,
+          salary: true,
+          payGroup: true,
+          vacationPay: true,
+          federalTD1: true,
+          provincialTD1: true,
         },
       });
       if (!emp) throw new Error(`Unknown employee: ${it.employeeId}`);
@@ -99,6 +106,8 @@ export async function POST(req: NextRequest) {
         overtime: it.overtime,
         holidayHours: it.holidayHours,
         includeVacation: it.includeVacation,
+        federalTD1: Number(emp.federalTD1 ?? 0),
+        provincialTD1: Number(emp.provincialTD1 ?? 0),
       });
 
       await tx.payHistory.create({
