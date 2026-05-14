@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { updateEmployeeCraProfileAction } from "../actions";
+import { updateEmployeeCraProfileAction, updateEmployeeProfileAction } from "../actions";
 import PaymentStatusCard from "./payment-status-card";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 import PlanRequiredButton from "@/app/components/PlanRequiredButton";
@@ -21,12 +21,20 @@ function toUiPayoutStatus(status: string) {
   }
 }
 
+function formatDateInput(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
 export default async function EmployeeDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ updated?: string }>;
 }) {
   const { id } = await params;
+  const resolvedSearchParams = await (searchParams ??
+    Promise.resolve({} as { updated?: string }));
   const company = await requireCompanyAdminOrRedirect();
 
   let employeeId: bigint;
@@ -43,9 +51,26 @@ export default async function EmployeeDetailPage({
       firstName: true,
       lastName: true,
       email: true,
+      employeeNumber: true,
+      department: true,
+      jobTitle: true,
+      addrLine1: true,
+      addrLine2: true,
+      addrCity: true,
+      addrProvince: true,
+      addrPostal: true,
+      addrCountry: true,
+      birthDate: true,
       employmentType: true,
+      hireDate: true,
       payType: true,
       payGroup: true,
+      hourlyRate: true,
+      salary: true,
+      vacationPay: true,
+      bonus: true,
+      federalTD1: true,
+      provincialTD1: true,
       dentalBenefitsCoverage: true,
       rppDpspRegistrationNumber: true,
       pensionAdjustmentOverride: true,
@@ -63,6 +88,12 @@ export default async function EmployeeDetailPage({
   const fieldClassName =
     "w-full rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-gray-500";
   const labelClassName = "flex flex-col gap-2 text-sm text-gray-700";
+  const successMessage =
+    resolvedSearchParams.updated === "profile"
+      ? "Employee information saved successfully."
+      : resolvedSearchParams.updated === "cra"
+        ? "CRA / T4 profile saved successfully."
+        : null;
 
   return (
     <main className="max-w-4xl mx-auto p-6 space-y-6">
@@ -73,6 +104,12 @@ export default async function EmployeeDetailPage({
         <span className="mr-1 text-lg">←</span>
         Back to Employees
       </Link>
+
+      {successMessage ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+          {successMessage}
+        </div>
+      ) : null}
 
       <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
         <div className="space-y-1">
@@ -89,6 +126,255 @@ export default async function EmployeeDetailPage({
             <p>Created: {employee.createdAt.toLocaleDateString()}</p>
           </div>
         </div>
+      </section>
+
+      <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
+        <div className="space-y-2">
+          <h2 className="text-xl font-semibold text-gray-900">Employee information</h2>
+          <p className="text-sm text-gray-600">
+            Update profile, address, and payroll details used across payroll runs and reports.
+          </p>
+        </div>
+
+        <form action={updateEmployeeProfileAction} className="space-y-5">
+          <input type="hidden" name="employeeId" value={employee.id.toString()} />
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className={labelClassName}>
+              <span>First name *</span>
+              <input
+                name="firstName"
+                required
+                defaultValue={employee.firstName}
+                className={fieldClassName}
+              />
+            </label>
+            <label className={labelClassName}>
+              <span>Last name *</span>
+              <input
+                name="lastName"
+                required
+                defaultValue={employee.lastName}
+                className={fieldClassName}
+              />
+            </label>
+            <label className={`${labelClassName} md:col-span-2`}>
+              <span>Email *</span>
+              <input
+                type="email"
+                name="email"
+                required
+                defaultValue={employee.email}
+                className={fieldClassName}
+              />
+            </label>
+            <label className={labelClassName}>
+              <span>Employee number</span>
+              <input
+                name="employeeNumber"
+                defaultValue={employee.employeeNumber ?? ""}
+                className={fieldClassName}
+              />
+            </label>
+            <label className={labelClassName}>
+              <span>Department</span>
+              <input
+                name="department"
+                defaultValue={employee.department ?? ""}
+                className={fieldClassName}
+              />
+            </label>
+            <label className={`${labelClassName} md:col-span-2`}>
+              <span>Job title</span>
+              <input
+                name="jobTitle"
+                defaultValue={employee.jobTitle ?? ""}
+                className={fieldClassName}
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className={labelClassName}>
+              <span>Address line 1 *</span>
+              <input
+                name="addrLine1"
+                required
+                defaultValue={employee.addrLine1}
+                className={fieldClassName}
+              />
+            </label>
+            <label className={labelClassName}>
+              <span>Address line 2</span>
+              <input
+                name="addrLine2"
+                defaultValue={employee.addrLine2 ?? ""}
+                className={fieldClassName}
+              />
+            </label>
+            <label className={labelClassName}>
+              <span>City *</span>
+              <input
+                name="addrCity"
+                required
+                defaultValue={employee.addrCity}
+                className={fieldClassName}
+              />
+            </label>
+            <label className={labelClassName}>
+              <span>Province</span>
+              <input
+                name="addrProvince"
+                defaultValue={employee.addrProvince}
+                className={fieldClassName}
+              />
+            </label>
+            <label className={labelClassName}>
+              <span>Postal code *</span>
+              <input
+                name="addrPostal"
+                required
+                defaultValue={employee.addrPostal}
+                className={fieldClassName}
+              />
+            </label>
+            <label className={labelClassName}>
+              <span>Country</span>
+              <input
+                name="addrCountry"
+                defaultValue={employee.addrCountry}
+                className={fieldClassName}
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <label className={labelClassName}>
+              <span>Birth date *</span>
+              <input
+                type="date"
+                name="birthDate"
+                required
+                defaultValue={formatDateInput(employee.birthDate)}
+                className={fieldClassName}
+              />
+            </label>
+            <label className={labelClassName}>
+              <span>Employment type *</span>
+              <select
+                name="employmentType"
+                defaultValue={employee.employmentType}
+                className={fieldClassName}
+              >
+                <option value="FULL_TIME">FULL_TIME</option>
+                <option value="PART_TIME">PART_TIME</option>
+                <option value="CONTRACTOR">CONTRACTOR</option>
+              </select>
+            </label>
+            <label className={labelClassName}>
+              <span>Hire date *</span>
+              <input
+                type="date"
+                name="hireDate"
+                required
+                defaultValue={formatDateInput(employee.hireDate)}
+                className={fieldClassName}
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className={labelClassName}>
+              <span>Pay group</span>
+              <select
+                name="payGroup"
+                defaultValue={employee.payGroup}
+                className={fieldClassName}
+              >
+                <option value="BI_WEEKLY">BI_WEEKLY</option>
+                <option value="MONTHLY">MONTHLY</option>
+              </select>
+            </label>
+            <label className={labelClassName}>
+              <span>Pay type</span>
+              <select name="payType" defaultValue={employee.payType} className={fieldClassName}>
+                <option value="HOURLY">HOURLY</option>
+                <option value="SALARY">SALARY</option>
+              </select>
+            </label>
+            <label className={labelClassName}>
+              <span>Hourly rate</span>
+              <input
+                name="hourlyRate"
+                type="number"
+                step="0.01"
+                defaultValue={employee.hourlyRate?.toString() ?? ""}
+                className={fieldClassName}
+              />
+            </label>
+            <label className={labelClassName}>
+              <span>Annual salary</span>
+              <input
+                name="salary"
+                type="number"
+                step="0.01"
+                defaultValue={employee.salary?.toString() ?? ""}
+                className={fieldClassName}
+              />
+            </label>
+            <label className={labelClassName}>
+              <span>Vacation %</span>
+              <input
+                name="vacationPay"
+                type="number"
+                step="0.01"
+                defaultValue={employee.vacationPay.toString()}
+                className={fieldClassName}
+              />
+            </label>
+            <label className={labelClassName}>
+              <span>Bonus</span>
+              <input
+                name="bonus"
+                type="number"
+                step="0.01"
+                defaultValue={employee.bonus.toString()}
+                className={fieldClassName}
+              />
+            </label>
+            <label className={labelClassName}>
+              <span>Federal TD1</span>
+              <input
+                name="federalTD1"
+                type="number"
+                step="0.01"
+                defaultValue={employee.federalTD1.toString()}
+                className={fieldClassName}
+              />
+            </label>
+            <label className={labelClassName}>
+              <span>Provincial TD1</span>
+              <input
+                name="provincialTD1"
+                type="number"
+                step="0.01"
+                defaultValue={employee.provincialTD1.toString()}
+                className={fieldClassName}
+              />
+            </label>
+          </div>
+
+          <div className="flex justify-end">
+            <PlanRequiredButton
+              hasSelectedPlan={Boolean(company.currentPlan)}
+              currentPlan={company.currentPlan}
+              type="submit"
+              className="rounded-full bg-gray-900 px-6 py-3 text-sm font-medium text-white transition hover:bg-gray-800"
+            >
+              Save employee information
+            </PlanRequiredButton>
+          </div>
+        </form>
       </section>
 
       <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">

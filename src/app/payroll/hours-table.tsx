@@ -231,7 +231,9 @@ export default function HoursTable({
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Request failed");
 
-      setMsg({ ok: `Successfully triggered Payroll Workflow! (n8n)` });
+      setMsg({
+        ok: "Payroll run saved. Paystubs will be sent on the scheduled delivery date.",
+      });
     } catch (e: unknown) {
       setMsg({ err: e instanceof Error ? e.message : "Failed to run payroll." });
     } finally {

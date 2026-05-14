@@ -114,8 +114,8 @@ export default async function PayrollPage() {
         </div>
       </header>
 
-      <PayrollStatusBlock runs={payrollStatusRows} />
       <HoursTable employees={employees} hasSelectedPlan={Boolean(company.currentPlan)} />
+      <PayrollStatusBlock runs={payrollStatusRows} />
     </main>
   );
 }
