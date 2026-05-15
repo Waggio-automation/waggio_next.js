@@ -92,8 +92,11 @@ export async function POST(req: Request) {
           meta: scheduleMeta as Prisma.InputJsonValue,
         },
       });
-
-      const url = process.env.N8N_PAYROLL_WEBHOOK_URL ?? process.env.N8N_WEBHOOK_URL;
+// // N8N_TEST_WEBHOOK_URL이 있으면 테스트 URL, 없으면 프로덕션 URL 사용
+      const url =
+        process.env.N8N_PAYROLL_WEBHOOK_URL ??
+        process.env.N8N_TEST_WEBHOOK_URL ??
+        process.env.N8N_WEBHOOK_URL;
       if (!url) {
         return NextResponse.json({
           ok: true,

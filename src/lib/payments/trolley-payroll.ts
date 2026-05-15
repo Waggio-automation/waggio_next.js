@@ -1,6 +1,14 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { createBatch, createPayment, startBatchProcessing } from "@/lib/trolley";
+import {
+  createBatch,
+  createPayment,
+  listPayments,
+  startBatchProcessing,
+  TrolleyApiError,
+  type CreatePaymentInput,
+  type Payment,
+} from "@/lib/trolley";
 import { billExtraPayrollRunIfNeeded } from "@/lib/stripe";
 import {
   buildTrolleyPayHistoryExternalId,
@@ -161,6 +169,78 @@ function assertRunnable(run: SerializablePayrollRun, options: { enforceDue: bool
   }
 }
 
+function isNonSufficientFundsError(error: unknown): error is TrolleyApiError {
+  return (
+    error instanceof TrolleyApiError &&
+    error.status === 400 &&
+    error.code === "non_sufficient_funds"
+  );
+}
+
+function formatNonSufficientFundsMessage(rawMessage: string): string {
+  const balance = rawMessage.match(/balance=([\d.]+)/)?.[1];
+  const need = rawMessage.match(/need=([\d.]+)/)?.[1];
+  const currency = rawMessage.match(/currency=([A-Za-z]+)/)?.[1];
+
+  if (!balance || !need || !currency) {
+    return "Insufficient funds in your Trolley account. Please add funds to your Trolley account.";
+  }
+
+  return `Insufficient funds in your Trolley account. Current balance: ${balance}, Required: ${need} ${currency}. Please add funds to your Trolley account.`;
+}
+
+function isDuplicateExternalIdError(error: unknown): error is TrolleyApiError {
+  if (!(error instanceof TrolleyApiError) || error.status !== 400) {
+    return false;
+  }
+
+  const haystack = [
+    error.message,
+    error.code,
+    typeof error.details === "string"
+      ? error.details
+      : error.details
+        ? JSON.stringify(error.details)
+        : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    haystack.includes("duplicate") &&
+    (haystack.includes("externalid") || haystack.includes("external_id") || haystack.includes("external id"))
+  );
+}
+
+async function findPaymentByExternalId(
+  externalId: string
+): Promise<Payment | null> {
+  const result = await listPayments({ search: externalId, pageSize: 50 });
+  const match = result.items.find((p) => p.externalId === externalId);
+  return match ?? null;
+}
+
+async function createOrReusePayment(
+  batchId: string,
+  input: CreatePaymentInput
+): Promise<Payment> {
+  try {
+    return await createPayment(batchId, input);
+  } catch (error: unknown) {
+    if (!isDuplicateExternalIdError(error) || !input.externalId) {
+      throw error;
+    }
+
+    const existing = await findPaymentByExternalId(input.externalId);
+    if (!existing) {
+      throw error;
+    }
+
+    return existing;
+  }
+}
+
 export async function sendPayrollRunToTrolley(
   payrollRunId: bigint,
   options: { enforceDue: boolean } = { enforceDue: true }
@@ -204,7 +284,7 @@ export async function sendPayrollRunToTrolley(
   const paymentResults: Array<{ payHistoryId: bigint; paymentId: string }> = [];
 
   for (const row of run.payHistory) {
-    const payment = await createPayment(batch.id, {
+    const payment = await createOrReusePayment(batch.id, {
       recipient: {
         id: row.employee.trolleyRecipientId!,
       },
@@ -231,7 +311,18 @@ export async function sendPayrollRunToTrolley(
     });
   }
 
-  const processing = await startBatchProcessing(batch.id);
+  let processing;
+  try {
+    processing = await startBatchProcessing(batch.id);
+  } catch (error: unknown) {
+    if (isNonSufficientFundsError(error)) {
+      throw new PayrollSendError(
+        "non_sufficient_funds",
+        formatNonSufficientFundsMessage(error.message)
+      );
+    }
+    throw error;
+  }
 
   await prisma.$transaction(async (tx) => {
     await tx.payrollRun.update({

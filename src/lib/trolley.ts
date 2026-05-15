@@ -493,6 +493,11 @@ export class TrolleyClient {
       const errorPayload =
         data && typeof data === "object" ? (data as Record<string, unknown>) : undefined;
 
+      const firstError =
+        errorPayload && Array.isArray(errorPayload.errors) && errorPayload.errors.length > 0
+          ? (errorPayload.errors[0] as Record<string, unknown>)
+          : undefined;
+
       logTrolleyResponse("error response", {
         method: params.method,
         path: requestPath,
@@ -501,23 +506,31 @@ export class TrolleyClient {
         body: summarizeForLog(data),
       });
 
+      const extractedCode =
+        typeof errorPayload?.code === "string"
+          ? errorPayload.code
+          : typeof errorPayload?.errorCode === "string"
+            ? errorPayload.errorCode
+            : typeof firstError?.code === "string"
+              ? firstError.code
+              : undefined;
+
+      const extractedMessage =
+        typeof errorPayload?.message === "string"
+          ? errorPayload.message
+          : typeof errorPayload?.error === "string"
+            ? errorPayload.error
+            : typeof firstError?.message === "string"
+              ? firstError.message
+              : typeof errorPayload?.raw === "string"
+                ? errorPayload.raw
+                : `Trolley API request failed with status ${response.status}`;
+
       throw new TrolleyApiError({
         status: response.status,
         requestId,
-        code:
-          typeof errorPayload?.code === "string"
-            ? errorPayload.code
-            : typeof errorPayload?.errorCode === "string"
-              ? errorPayload.errorCode
-              : undefined,
-        message:
-          typeof errorPayload?.message === "string"
-            ? errorPayload.message
-            : typeof errorPayload?.error === "string"
-              ? errorPayload.error
-              : typeof errorPayload?.raw === "string"
-                ? errorPayload.raw
-              : `Trolley API request failed with status ${response.status}`,
+        code: extractedCode,
+        message: extractedMessage,
         details: data,
       });
     }
@@ -644,6 +657,60 @@ export class TrolleyClient {
     return extractResource<Payment>(response, ["payment", "data"]);
   }
 
+  async listBatchPayments(
+    batchId: string,
+    params: { search?: string; page?: number; pageSize?: number } = {}
+  ): Promise<TrolleyPaginatedResponse<Payment>> {
+    const response = await this.signedRequest<unknown>({
+      method: "GET",
+      path: `/batches/${batchId}/payments`,
+      query: {
+        page: params.page,
+        pageSize: params.pageSize,
+        search: params.search,
+      },
+    });
+
+    const payload = (response ?? {}) as Record<string, unknown>;
+    const items =
+      Array.isArray(payload.items)
+        ? (payload.items as Payment[])
+        : Array.isArray(payload.payments)
+          ? (payload.payments as Payment[])
+          : Array.isArray(payload.data)
+            ? (payload.data as Payment[])
+            : [];
+
+    return {
+      ...payload,
+      items,
+    };
+  }
+
+  async listPayments(
+    params: { search?: string; page?: number; pageSize?: number } = {}
+  ): Promise<TrolleyPaginatedResponse<Payment>> {
+    const response = await this.signedRequest<unknown>({
+      method: "GET",
+      path: "/payments",
+      query: {
+        page: params.page,
+        pageSize: params.pageSize,
+        search: params.search,
+      },
+    });
+
+    const payload = (response ?? {}) as Record<string, unknown>;
+    const items = Array.isArray(payload.payments)
+      ? (payload.payments as Payment[])
+      : [];
+
+    return {
+      ...payload,
+      items,
+    };
+  }
+
   async startBatchProcessing(batchId: string): Promise<BatchProcessingResult> {
     const response = await this.signedRequest<unknown>({
       method: "POST",
@@ -694,6 +761,17 @@ export const createBatch = (input: CreateBatchInput) =>
 
 export const createPayment = (batchId: string, input: CreatePaymentInput) =>
   getTrolleyClient().createPayment(batchId, input);
+
+export const listBatchPayments = (
+  batchId: string,
+  params?: { search?: string; page?: number; pageSize?: number }
+) => getTrolleyClient().listBatchPayments(batchId, params);
+
+export const listPayments = (params?: {
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}) => getTrolleyClient().listPayments(params);
 
 export const startBatchProcessing = (batchId: string) =>
   getTrolleyClient().startBatchProcessing(batchId);

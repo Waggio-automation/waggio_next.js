@@ -138,8 +138,8 @@ export async function POST(req: Request) {
 
       return createdRun;
     });
-
-    const webhookUrl = process.env.N8N_WEBHOOK_URL;
+// N8N_TEST_WEBHOOK_URL이 있으면 테스트 URL, 없으면 프로덕션 URL 사용
+    const webhookUrl = process.env.N8N_TEST_WEBHOOK_URL ?? process.env.N8N_WEBHOOK_URL;
     if (webhookUrl) {
       try {
         const webhookRes = await fetch(webhookUrl, {

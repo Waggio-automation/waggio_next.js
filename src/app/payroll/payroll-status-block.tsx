@@ -21,11 +21,21 @@ function isHideableCompletedStatus(status: RunRow["status"]) {
   return status === "paid" || status === "processed";
 }
 
+type MissingPayoutEmployee = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+};
+
 export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
   const [retrying, setRetrying] = useState<string | null>(null);
   const [dispatchingDueRuns, setDispatchingDueRuns] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [showCompletedRuns, setShowCompletedRuns] = useState(false);
+  const [missingPayoutEmployees, setMissingPayoutEmployees] = useState<
+    MissingPayoutEmployee[] | null
+  >(null);
 
   const now = Date.now();
   const activeRuns = runs.filter((run) => !isHideableCompletedStatus(run.status));
@@ -71,6 +81,21 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
     try {
       setMessage(null);
       setDispatchingDueRuns(true);
+
+      const preflightRes = await fetch("/api/payroll/preflight-check");
+      const preflightData = await preflightRes.json();
+
+      if (!preflightRes.ok) {
+        throw new Error(
+          preflightData?.error || "Preflight check failed."
+        );
+      }
+
+      const missing: MissingPayoutEmployee[] = preflightData?.missing ?? [];
+      if (missing.length > 0) {
+        setMissingPayoutEmployees(missing);
+        return;
+      }
 
       const res = await fetch("/api/payroll/send-due", {
         method: "POST",
@@ -178,6 +203,47 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
 
         {message ? <p className="text-sm text-gray-600">{message}</p> : null}
       </div>
+
+      {missingPayoutEmployees ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-3xl border border-gray-200 bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900">
+              Payout setup required
+            </h3>
+            <p className="mt-2 text-sm text-gray-600">
+              The following employees are missing Trolley payout setup. Please
+              set up their accounts before sending payroll:
+            </p>
+            <ul className="mt-3 max-h-60 space-y-1 overflow-y-auto rounded-2xl bg-gray-50 p-3 text-sm text-gray-800">
+              {missingPayoutEmployees.map((emp) => (
+                <li key={emp.id} className="flex items-center justify-between gap-2">
+                  <span>
+                    {emp.firstName} {emp.lastName}
+                  </span>
+                  <Link
+                    href={`/employees/${emp.id}`}
+                    className="text-xs text-gray-600 underline hover:text-gray-900"
+                  >
+                    Open profile
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-xs text-gray-500">
+              You can set up payout in each employee&apos;s profile page.
+            </p>
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setMissingPayoutEmployees(null)}
+                className="rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

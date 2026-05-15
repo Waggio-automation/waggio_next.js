@@ -90,10 +90,11 @@ export async function createEmployee(prevState: CreateEmployeeState, formData: F
       payoutEnabled: false,
     },
   });
-
+// N8N_TEST_WEBHOOK_URL이 있으면 테스트 URL, 없으면 프로덕션 URL 사용
   // 4) (선택) n8n Webhook 트리거 – 서버에서만 호출 (민감정보는 보내지 않기!)
-  if (process.env.N8N_WEBHOOK_URL) {
-    await fetch(process.env.N8N_WEBHOOK_URL, {
+  const employeeWebhookUrl = process.env.N8N_TEST_WEBHOOK_URL ?? process.env.N8N_WEBHOOK_URL;
+  if (employeeWebhookUrl) {
+    await fetch(employeeWebhookUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
