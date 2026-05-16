@@ -46,11 +46,16 @@ export function getStripeClient() {
 }
 
 export function getBillingOrigin() {
-  const origin =
+  const explicit =
     process.env.NEXT_PUBLIC_APP_URL ??
     process.env.APP_URL ??
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    "http://localhost:3000";
+    process.env.NEXT_PUBLIC_SITE_URL;
+
+  const fromVercel = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : undefined;
+
+  const origin = explicit ?? fromVercel ?? "http://localhost:3000";
   return origin.replace(/\/$/, "");
 }
 
