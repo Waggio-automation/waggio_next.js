@@ -1,10 +1,25 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const company = await requireCompanyAdminOrRedirect();
+    const url = new URL(req.url);
+    const payrollRunIdParam = url.searchParams.get("payrollRunId");
+    let payrollRunId: bigint | null = null;
+    if (payrollRunIdParam) {
+      try {
+        payrollRunId = BigInt(payrollRunIdParam);
+      } catch {
+        return NextResponse.json({ error: "Invalid payroll run id." }, { status: 400 });
+      }
+    }
+
     const dueRuns = await prisma.payrollRun.findMany({
       where: {
+        companyId: company.id,
+        ...(payrollRunId ? { id: payrollRunId } : {}),
         status: "PROCESSED",
         providerRef: null,
         sendAt: { lte: new Date() },

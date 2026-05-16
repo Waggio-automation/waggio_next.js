@@ -1,4 +1,5 @@
 import Link from "next/link";
+import WorkspaceNav from "@/app/components/WorkspaceNav";
 import CompanyBankAccountCard from "./payroll/CompanyBankAccountCard";
 import {
   openStripeBillingPortalAction,
@@ -156,6 +157,10 @@ export default async function CompanySettingsPage({
 
   return (
     <main className="mx-auto w-full max-w-5xl px-6 py-8 space-y-6">
+      <div className="-mx-6">
+        <WorkspaceNav />
+      </div>
+
       <header className="space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-2">
@@ -177,14 +182,6 @@ export default async function CompanySettingsPage({
             </div>
           </div>
 
-          <form action="/api/auth/logout" method="post">
-            <button
-              type="submit"
-              className="rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-            >
-              Log out
-            </button>
-          </form>
         </div>
       </header>
 

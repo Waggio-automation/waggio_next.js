@@ -8,8 +8,14 @@ import PlanRequiredButton from "@/app/components/PlanRequiredButton";
 export default function CreateEmployeeForm({ hasSelectedPlan }: { hasSelectedPlan: boolean }) {
   const [state, action] = useActionState(createEmployee, null);
   const errors = state && "errors" in state ? state.errors : {};
+  const didCreate = state && "success" in state ? state.success : false;
 
   const [sinValue, setSinValue] = useState("");
+  const [setupPayoutNow, setSetupPayoutNow] = useState(false);
+  const [payoutMethod, setPayoutMethod] = useState<"bank-transfer" | "paypal">("bank-transfer");
+  const [payoutCountry, setPayoutCountry] = useState("CA");
+  const [institutionNumber, setInstitutionNumber] = useState("");
+  const [transitBranchNumber, setTransitBranchNumber] = useState("");
   const sinIsNineDigits = /^\d{9}$/.test(sinValue);
   const sinLuhnValid = sinIsNineDigits && (() => {
     const digits = sinValue.split("").map(Number);
@@ -25,16 +31,26 @@ export default function CreateEmployeeForm({ hasSelectedPlan }: { hasSelectedPla
   const fieldClassName =
     "w-full rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-gray-500";
   const labelClassName = "flex flex-col gap-2 text-sm text-gray-700";
+  const isCanadianBankTransfer = payoutMethod === "bank-transfer" && payoutCountry.toUpperCase() === "CA";
+
+  function normalizeDigits(value: string, maxLength: number) {
+    return value.replace(/\D/g, "").slice(0, maxLength);
+  }
 
   return (
     <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm space-y-5">
       <div className="space-y-1">
         <h2 className="text-xl font-semibold text-gray-900">Create Employee</h2>
         <p className="text-sm text-gray-600">
-          Enter employee and payroll details below. Trolley payout setup is completed from the
-          employee profile after creation.
+          Enter employee and payroll details below. You can add bank account details now or finish
+          them later from the employee profile.
         </p>
       </div>
+      {didCreate ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+          Employee created successfully.
+        </div>
+      ) : null}
       <form action={action} className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <label className={labelClassName}>
@@ -209,26 +225,174 @@ export default function CreateEmployeeForm({ hasSelectedPlan }: { hasSelectedPla
             />
           </label>
         </div>
-        <div className="space-y-3 border-t border-gray-200 pt-4">
-          <h3 className="text-sm font-semibold text-gray-900">Direct Deposit</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <label className={labelClassName}>
-              <span>Bank Transit #</span>
-              <input name="bankTransit" className={fieldClassName} />
-            </label>
-            <label className={labelClassName}>
-              <span>Account #</span>
-              <input name="bankAccount" className={fieldClassName} />
-            </label>
+        <div className="space-y-4 border-t border-gray-200 pt-6">
+          <div className="rounded-2xl border border-gray-200 bg-white p-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-1">
+                <h3 className="text-base font-semibold text-gray-900">Employee bank account details</h3>
+                <p className="max-w-2xl text-sm text-gray-600">
+                  Add the employee&apos;s payout account now, or complete it later from the employee profile.
+                </p>
+              </div>
+              <label className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700">
+                <input
+                  type="checkbox"
+                  name="setupPayoutNow"
+                  value="yes"
+                  checked={setupPayoutNow}
+                  onChange={(event) => setSetupPayoutNow(event.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                Enter now
+              </label>
+            </div>
+
+            {setupPayoutNow ? (
+              <div className="mt-5 space-y-4 border-t border-gray-200 pt-5">
+                <div className="flex flex-wrap gap-3 text-sm">
+                  <label className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2">
+                    <input
+                      type="radio"
+                      name="payoutType"
+                      value="bank-transfer"
+                      checked={payoutMethod === "bank-transfer"}
+                      onChange={() => setPayoutMethod("bank-transfer")}
+                    />
+                    Bank transfer
+                  </label>
+                  <label className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-2">
+                    <input
+                      type="radio"
+                      name="payoutType"
+                      value="paypal"
+                      checked={payoutMethod === "paypal"}
+                      onChange={() => setPayoutMethod("paypal")}
+                    />
+                    PayPal
+                  </label>
+                </div>
+
+                {payoutMethod === "bank-transfer" ? (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className={labelClassName}>
+                      <span>Currency *</span>
+                      <input
+                        name="payoutCurrency"
+                        required={setupPayoutNow}
+                        defaultValue="CAD"
+                        maxLength={3}
+                        className={`${fieldClassName} uppercase`}
+                      />
+                    </label>
+                    <label className={labelClassName}>
+                      <span>Country *</span>
+                      <input
+                        name="payoutCountry"
+                        required={setupPayoutNow}
+                        value={payoutCountry}
+                        onChange={(event) => setPayoutCountry(event.target.value.toUpperCase())}
+                        maxLength={2}
+                        className={`${fieldClassName} uppercase`}
+                      />
+                    </label>
+                    <label className={`${labelClassName} md:col-span-2`}>
+                      <span>Account holder name *</span>
+                      <input name="accountHolderName" required={setupPayoutNow} className={fieldClassName} />
+                    </label>
+                    <label className={labelClassName}>
+                      <span>Account Number *</span>
+                      <input
+                        name="accountNumber"
+                        required={setupPayoutNow}
+                        inputMode="numeric"
+                        pattern={isCanadianBankTransfer ? "\\d{7,12}" : undefined}
+                        maxLength={isCanadianBankTransfer ? 12 : undefined}
+                        className={fieldClassName}
+                      />
+                    </label>
+                    <label className={labelClassName}>
+                      <span>
+                        Institution Number {isCanadianBankTransfer ? "*" : <span className="text-gray-400">(Optional)</span>}
+                      </span>
+                      <input
+                        name="institutionNumber"
+                        required={setupPayoutNow && isCanadianBankTransfer}
+                        value={institutionNumber}
+                        onChange={(event) => setInstitutionNumber(normalizeDigits(event.target.value, 3))}
+                        inputMode="numeric"
+                        pattern="\d{3}"
+                        maxLength={3}
+                        className={fieldClassName}
+                      />
+                    </label>
+                    <label className={labelClassName}>
+                      <span>
+                        Transit / Branch Number {isCanadianBankTransfer ? "*" : <span className="text-gray-400">(Optional)</span>}
+                      </span>
+                      <input
+                        name="transitBranchNumber"
+                        required={setupPayoutNow && isCanadianBankTransfer}
+                        value={transitBranchNumber}
+                        onChange={(event) => setTransitBranchNumber(normalizeDigits(event.target.value, 5))}
+                        inputMode="numeric"
+                        pattern="\d{5}"
+                        maxLength={5}
+                        className={fieldClassName}
+                      />
+                    </label>
+                    <label className={labelClassName}>
+                      <span>IBAN <span className="text-gray-400">(Optional)</span></span>
+                      <input name="iban" className={fieldClassName} />
+                    </label>
+                    <label className={`${labelClassName} md:col-span-2`}>
+                      <span>SWIFT / BIC <span className="text-gray-400">(Optional)</span></span>
+                      <input name="swiftBic" className={fieldClassName} />
+                    </label>
+                  </div>
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className={labelClassName}>
+                      <span>Currency *</span>
+                      <input
+                        name="payoutCurrency"
+                        required={setupPayoutNow}
+                        defaultValue="CAD"
+                        maxLength={3}
+                        className={`${fieldClassName} uppercase`}
+                      />
+                    </label>
+                    <label className={labelClassName}>
+                      <span>PayPal email *</span>
+                      <input
+                        type="email"
+                        name="paypalEmail"
+                        required={setupPayoutNow}
+                        className={fieldClassName}
+                      />
+                    </label>
+                  </div>
+                )}
+
+                <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                  For Canada bank transfers, Institution Number must be 3 digits, Transit / Branch Number must be 5 digits, and Account Number must be 7 to 12 digits.
+                </div>
+              </div>
+            ) : null}
           </div>
+
+          {errors?.payoutSetup ? (
+            <p className="text-sm text-red-600">{errors.payoutSetup}</p>
+          ) : null}
         </div>
-        <PlanRequiredButton
-          hasSelectedPlan={hasSelectedPlan}
-          type="submit"
-          className="rounded-full bg-gray-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
-        >
-          Create
-        </PlanRequiredButton>
+        <div className="flex justify-end border-t border-gray-200 pt-5">
+          <PlanRequiredButton
+            hasSelectedPlan={hasSelectedPlan}
+            type="submit"
+            className="rounded-full bg-gray-900 px-6 py-3 text-sm font-medium text-white hover:bg-gray-800"
+          >
+            Create
+          </PlanRequiredButton>
+        </div>
       </form>
     </section>
   );

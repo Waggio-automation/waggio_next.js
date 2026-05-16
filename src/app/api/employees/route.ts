@@ -45,8 +45,6 @@ export async function POST(req: NextRequest) {
         employeeNumber: parsed.employeeNumber?.trim() || null,
         department: parsed.department?.trim() || null,
         jobTitle: parsed.jobTitle?.trim() || null,
-        bankTransit: parsed.bankTransit?.trim() || null,
-        bankAccount: parsed.bankAccount?.trim() || null,
         hourlyRate: parsed.hourlyRate ?? null,
         salary: parsed.salary ?? null,
         rppDpspRegistrationNumber: parsed.rppDpspRegistrationNumber?.trim() || null,

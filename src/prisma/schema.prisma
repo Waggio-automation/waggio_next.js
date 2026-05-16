@@ -15,8 +15,9 @@ model Employee {
   employeeNumber              String?
   department                  String?
   jobTitle                    String?
-  bankTransit                 String?
-  bankAccount                 String?
+  institutionNumber           String?
+  transitBranchNumber         String?
+  accountNumber               String?
   sin                         String
   dentalBenefitsCoverage      DentalBenefitsCoverage @default(NONE)
   paymentMethod               PaymentMethod          @default(CHEQUE)
@@ -41,7 +42,7 @@ model Employee {
   provincialTD1               Decimal                @default(12989)
   createdAt                   DateTime               @default(now())
   updatedAt                   DateTime               @updatedAt
-  trolleyRecipientId          String?                @unique
+  trolleyRecipientId          String?
   trolleyReferenceId          String?                @unique
   payoutEnabled               Boolean                @default(false)
   payoutSetupStatus           PayoutSetupStatus      @default(REQUIRED)

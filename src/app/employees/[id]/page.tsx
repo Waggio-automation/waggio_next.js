@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { updateEmployeeCraProfileAction, updateEmployeeProfileAction } from "../actions";
@@ -36,6 +35,7 @@ export default async function EmployeeDetailPage({
   const resolvedSearchParams = await (searchParams ??
     Promise.resolve({} as { updated?: string }));
   const company = await requireCompanyAdminOrRedirect();
+  const hasProPlan = company.currentPlan === "PRO";
 
   let employeeId: bigint;
   try {
@@ -54,6 +54,9 @@ export default async function EmployeeDetailPage({
       employeeNumber: true,
       department: true,
       jobTitle: true,
+      institutionNumber: true,
+      transitBranchNumber: true,
+      accountNumber: true,
       addrLine1: true,
       addrLine2: true,
       addrCity: true,
@@ -97,14 +100,6 @@ export default async function EmployeeDetailPage({
 
   return (
     <main className="max-w-4xl mx-auto p-6 space-y-6">
-      <Link
-        href="/employees"
-        className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700"
-      >
-        <span className="mr-1 text-lg">←</span>
-        Back to Employees
-      </Link>
-
       {successMessage ? (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
           {successMessage}
@@ -377,67 +372,66 @@ export default async function EmployeeDetailPage({
         </form>
       </section>
 
-      <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
-        <div className="space-y-2">
-          <h2 className="text-xl font-semibold text-gray-900">CRA / T4 profile</h2>
-          <p className="text-sm text-gray-600">
-            Manage year-end filing details here instead of entering CRA box codes directly.
-          </p>
-        </div>
-
-        <form action={updateEmployeeCraProfileAction} className="grid gap-4 md:grid-cols-2">
-          <input type="hidden" name="employeeId" value={employee.id.toString()} />
-
-          <label className={`${labelClassName} md:col-span-2`}>
-            <span>Dental benefits coverage</span>
-            <select
-              name="dentalBenefitsCoverage"
-              defaultValue={employee.dentalBenefitsCoverage}
-              className={fieldClassName}
-            >
-              <option value="NONE">No employer-offered dental benefits</option>
-              <option value="EMPLOYEE_ONLY">Employee only</option>
-              <option value="EMPLOYEE_AND_SPOUSE">Employee and spouse</option>
-              <option value="EMPLOYEE_AND_CHILDREN">Employee and dependent children</option>
-              <option value="EMPLOYEE_AND_FAMILY">Employee, spouse, and dependent children</option>
-            </select>
-          </label>
-
-          <label className={labelClassName}>
-            <span>RPP or DPSP registration number</span>
-            <input
-              type="text"
-              name="rppDpspRegistrationNumber"
-              defaultValue={employee.rppDpspRegistrationNumber ?? ""}
-              className={fieldClassName}
-            />
-          </label>
-
-          <label className={labelClassName}>
-            <span>Pension adjustment override</span>
-            <input
-              type="number"
-              name="pensionAdjustmentOverride"
-              step="0.01"
-              min="0"
-              defaultValue={employee.pensionAdjustmentOverride?.toString() ?? ""}
-              className={fieldClassName}
-            />
-          </label>
-
-          <div className="md:col-span-2 flex justify-end">
-            <PlanRequiredButton
-              hasSelectedPlan={Boolean(company.currentPlan)}
-              currentPlan={company.currentPlan}
-              requiredPlan="PRO"
-              type="submit"
-              className="rounded-full bg-gray-900 px-6 py-3 text-sm font-medium text-white transition hover:bg-gray-800"
-            >
-              Save CRA / T4 profile
-            </PlanRequiredButton>
+      {hasProPlan ? (
+        <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
+          <div className="space-y-2">
+            <h2 className="text-xl font-semibold text-gray-900">CRA / T4 profile</h2>
+            <p className="text-sm text-gray-600">
+              Manage year-end filing details here instead of entering CRA box codes directly.
+            </p>
           </div>
-        </form>
-      </section>
+
+          <form action={updateEmployeeCraProfileAction} className="grid gap-4 md:grid-cols-2">
+            <input type="hidden" name="employeeId" value={employee.id.toString()} />
+
+            <label className={`${labelClassName} md:col-span-2`}>
+              <span>Dental benefits coverage</span>
+              <select
+                name="dentalBenefitsCoverage"
+                defaultValue={employee.dentalBenefitsCoverage}
+                className={fieldClassName}
+              >
+                <option value="NONE">No employer-offered dental benefits</option>
+                <option value="EMPLOYEE_ONLY">Employee only</option>
+                <option value="EMPLOYEE_AND_SPOUSE">Employee and spouse</option>
+                <option value="EMPLOYEE_AND_CHILDREN">Employee and dependent children</option>
+                <option value="EMPLOYEE_AND_FAMILY">Employee, spouse, and dependent children</option>
+              </select>
+            </label>
+
+            <label className={labelClassName}>
+              <span>RPP or DPSP registration number</span>
+              <input
+                type="text"
+                name="rppDpspRegistrationNumber"
+                defaultValue={employee.rppDpspRegistrationNumber ?? ""}
+                className={fieldClassName}
+              />
+            </label>
+
+            <label className={labelClassName}>
+              <span>Pension adjustment override</span>
+              <input
+                type="number"
+                name="pensionAdjustmentOverride"
+                step="0.01"
+                min="0"
+                defaultValue={employee.pensionAdjustmentOverride?.toString() ?? ""}
+                className={fieldClassName}
+              />
+            </label>
+
+            <div className="md:col-span-2 flex justify-end">
+              <button
+                type="submit"
+                className="rounded-full bg-gray-900 px-6 py-3 text-sm font-medium text-white transition hover:bg-gray-800"
+              >
+                Save CRA / T4 profile
+              </button>
+            </div>
+          </form>
+        </section>
+      ) : null}
 
       <PaymentStatusCard
         employeeId={employee.id.toString()}
@@ -445,6 +439,11 @@ export default async function EmployeeDetailPage({
         initialMethod={
           employee.trolleyRecipientAccountType === "paypal" ? "paypal" : "bank-transfer"
         }
+        initialAccountHolderName={`${employee.firstName} ${employee.lastName}`}
+        initialAccountNumber={employee.accountNumber}
+        initialInstitutionNumber={employee.institutionNumber}
+        initialTransitBranchNumber={employee.transitBranchNumber}
+        initialPaypalEmail={employee.email}
         hasSelectedPlan={Boolean(company.currentPlan)}
       />
     </main>

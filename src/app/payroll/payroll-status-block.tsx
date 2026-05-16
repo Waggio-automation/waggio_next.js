@@ -8,10 +8,21 @@ type RunRow = {
   id: string;
   payday: string;
   payDateIso: string;
+  sendAtIso: string | null;
   status: "scheduled" | "processed" | "funding" | "funds_confirmed" | "paying" | "paid" | "failed";
   failureType: "funding" | "employee" | null;
   failureReason: string | null;
   employeeIssueId?: string | null;
+  employees: Array<{
+    payHistoryId: string;
+    employeeId: string;
+    name: string;
+    email: string;
+    netPay: number;
+    status: string;
+    paymentRef: string | null;
+    failureReason: string | null;
+  }>;
 };
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -19,6 +30,34 @@ const MAX_DEFAULT_COMPLETED_RUNS = 3;
 
 function isHideableCompletedStatus(status: RunRow["status"]) {
   return status === "paid" || status === "processed";
+}
+
+function getEmployeePayoutTone(status: string, failureReason: string | null) {
+  if (failureReason || status === "FAILED") {
+    return {
+      label: "Issue",
+      className: "bg-red-50 text-red-700",
+    };
+  }
+
+  if (["SENT", "EMAIL_SENT", "PROCESSED"].includes(status)) {
+    return {
+      label: "Completed",
+      className: "bg-emerald-50 text-emerald-700",
+    };
+  }
+
+  if (["SENDING", "PROCESSING", "READY"].includes(status)) {
+    return {
+      label: "Processing",
+      className: "bg-blue-50 text-blue-700",
+    };
+  }
+
+  return {
+    label: "Pending",
+    className: "bg-gray-100 text-gray-700",
+  };
 }
 
 type MissingPayoutEmployee = {
@@ -54,6 +93,12 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
     ? runs
     : [...activeRuns, ...defaultVisibleCompletedRuns];
   const hiddenCompletedRunsCount = completedRuns.length - defaultVisibleCompletedRuns.length;
+  const nextDueProcessedRun = runs.find((run) => {
+    if (run.status !== "processed") return false;
+    if (!run.sendAtIso) return true;
+    const sendAtMs = new Date(run.sendAtIso).getTime();
+    return Number.isNaN(sendAtMs) || sendAtMs <= now;
+  });
 
   async function retryFunding(runId: string) {
     try {
@@ -77,12 +122,13 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
     }
   }
 
-  async function sendDuePayrollRuns() {
+  async function sendDuePayrollRuns(payrollRunId?: string) {
     try {
       setMessage(null);
       setDispatchingDueRuns(true);
 
-      const preflightRes = await fetch("/api/payroll/preflight-check");
+      const query = payrollRunId ? `?payrollRunId=${encodeURIComponent(payrollRunId)}` : "";
+      const preflightRes = await fetch(`/api/payroll/preflight-check${query}`);
       const preflightData = await preflightRes.json();
 
       if (!preflightRes.ok) {
@@ -99,6 +145,10 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
 
       const res = await fetch("/api/payroll/send-due", {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payrollRunId ? { payrollRunId } : {}),
       });
       const data = await res.json();
 
@@ -132,11 +182,11 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
           </div>
           <button
             type="button"
-            onClick={sendDuePayrollRuns}
-            disabled={dispatchingDueRuns}
+            onClick={() => sendDuePayrollRuns(nextDueProcessedRun?.id)}
+            disabled={dispatchingDueRuns || !nextDueProcessedRun}
             className="rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
           >
-            {dispatchingDueRuns ? "Sending due runs..." : "Send due payroll"}
+            {dispatchingDueRuns ? "Sending due run..." : "Send latest due payroll"}
           </button>
         </div>
       </div>
@@ -185,6 +235,41 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
               {run.failureReason ? (
                 <p className="text-xs text-gray-500">Reason: {run.failureReason}</p>
               ) : null}
+
+              <details className="rounded-2xl bg-gray-50 px-3 py-2">
+                <summary className="cursor-pointer list-none text-xs font-medium text-gray-600 [&::-webkit-details-marker]:hidden">
+                  Employee payout details ({run.employees.length})
+                </summary>
+                <div className="mt-3 space-y-2">
+                  {run.employees.map((employee) => {
+                    const tone = getEmployeePayoutTone(employee.status, employee.failureReason);
+                    return (
+                      <div
+                        key={employee.payHistoryId}
+                        className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="font-medium text-gray-900">{employee.name}</p>
+                            <p className="text-gray-500">{employee.email}</p>
+                          </div>
+                          <span className={`rounded-full px-2.5 py-1 font-medium ${tone.className}`}>
+                            {tone.label}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-gray-600">
+                          <span>Net: ${employee.netPay.toFixed(2)}</span>
+                          <span>Status: {employee.status}</span>
+                          {employee.paymentRef ? <span>Payment ref: {employee.paymentRef}</span> : null}
+                        </div>
+                        {employee.failureReason ? (
+                          <p className="mt-2 text-red-700">Error: {employee.failureReason}</p>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </details>
             </div>
           ))
         )}

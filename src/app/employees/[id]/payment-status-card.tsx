@@ -10,24 +10,36 @@ export default function PaymentStatusCard({
   employeeId,
   initialStatus,
   initialMethod,
+  initialAccountHolderName,
+  initialAccountNumber,
+  initialInstitutionNumber,
+  initialTransitBranchNumber,
+  initialPaypalEmail,
   hasSelectedPlan,
 }: {
   employeeId: string;
   initialStatus: PayoutStatus;
   initialMethod: PayoutMethod;
+  initialAccountHolderName: string;
+  initialAccountNumber?: string | null;
+  initialInstitutionNumber?: string | null;
+  initialTransitBranchNumber?: string | null;
+  initialPaypalEmail: string;
   hasSelectedPlan: boolean;
 }) {
   const [status, setStatus] = useState<PayoutStatus>(initialStatus);
   const [method, setMethod] = useState<PayoutMethod>(initialMethod);
   const [currency, setCurrency] = useState("CAD");
   const [country, setCountry] = useState("CA");
-  const [accountHolderName, setAccountHolderName] = useState("");
-  const [accountNum, setAccountNum] = useState("");
-  const [bankId, setBankId] = useState("");
-  const [branchId, setBranchId] = useState("");
+  const [accountHolderName, setAccountHolderName] = useState(initialAccountHolderName);
+  const [accountNumber, setAccountNumber] = useState(initialAccountNumber ?? "");
+  const [institutionNumber, setInstitutionNumber] = useState(
+    initialInstitutionNumber ?? ""
+  );
+  const [transitBranchNumber, setTransitBranchNumber] = useState(initialTransitBranchNumber ?? "");
   const [iban, setIban] = useState("");
   const [swiftBic, setSwiftBic] = useState("");
-  const [paypalEmail, setPaypalEmail] = useState("");
+  const [paypalEmail, setPaypalEmail] = useState(initialPaypalEmail);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -65,17 +77,29 @@ export default function PaymentStatusCard({
     setMessage(null);
 
     if (isCanadianBankTransfer) {
-      if (!/^\d{3}$/.test(bankId)) {
+      if (!/^\d{3}$/.test(institutionNumber)) {
         setLoading(false);
-        setError("For Canadian bank transfers, Bank ID must be exactly 3 digits.");
+        setError("For Canadian bank transfers, Institution Number must be exactly 3 digits.");
         return;
       }
 
-      if (!/^\d{5}$/.test(branchId)) {
+      if (!/^\d{5}$/.test(transitBranchNumber)) {
         setLoading(false);
-        setError("For Canadian bank transfers, Branch ID must be exactly 5 digits.");
+        setError("For Canadian bank transfers, Transit / Branch Number must be exactly 5 digits.");
         return;
       }
+
+      if (!/^\d{7,12}$/.test(accountNumber)) {
+        setLoading(false);
+        setError("For Canadian bank transfers, Account Number must be 7 to 12 digits.");
+        return;
+      }
+    }
+
+    if (method === "bank-transfer" && !/[A-Za-z]/.test(accountHolderName.trim())) {
+      setLoading(false);
+      setError("Account holder name must include letters.");
+      return;
     }
 
     const payload =
@@ -86,9 +110,9 @@ export default function PaymentStatusCard({
             country,
             currency,
             accountHolderName,
-            accountNum,
-            bankId: bankId || undefined,
-            branchId: branchId || undefined,
+            accountNumber,
+            institutionNumber: institutionNumber || undefined,
+            transitBranchNumber: transitBranchNumber || undefined,
             iban: iban || undefined,
             swiftBic: swiftBic || undefined,
           }
@@ -110,13 +134,13 @@ export default function PaymentStatusCard({
 
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        throw new Error(data?.error || "Failed to configure Trolley payout method.");
+        throw new Error(data?.error || "Failed to save employee bank account details.");
       }
 
       setStatus("ready");
-      setMessage("Trolley payout method saved.");
+      setMessage("Employee bank account details saved.");
     } catch (nextError: unknown) {
-      setError(nextError instanceof Error ? nextError.message : "Failed to configure Trolley payout method.");
+      setError(nextError instanceof Error ? nextError.message : "Failed to save employee bank account details.");
     } finally {
       setLoading(false);
     }
@@ -125,9 +149,9 @@ export default function PaymentStatusCard({
   return (
     <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
       <div className="space-y-2">
-        <h2 className="text-xl font-semibold text-gray-900">Trolley payout method</h2>
+        <h2 className="text-xl font-semibold text-gray-900">Employee bank account details</h2>
         <p className="text-sm text-gray-600">
-          Create or replace the employee&apos;s Trolley recipient account without exposing secret keys to the client.
+          Add or update the account this employee uses for payroll payouts.
         </p>
       </div>
 
@@ -194,22 +218,31 @@ export default function PaymentStatusCard({
             />
           </label>
           <label className="space-y-1 text-sm">
-            <span className="font-medium text-gray-700">Account number *</span>
+            <span className="font-medium text-gray-700">Account Number *</span>
             <input
               required
-              value={accountNum}
-              onChange={(event) => setAccountNum(event.target.value)}
+              value={accountNumber}
+              onChange={(event) =>
+                setAccountNumber(
+                  isCanadianBankTransfer
+                    ? normalizeDigits(event.target.value, 12)
+                    : event.target.value
+                )
+              }
+              inputMode={isCanadianBankTransfer ? "numeric" : undefined}
+              pattern={isCanadianBankTransfer ? "\\d{7,12}" : undefined}
+              maxLength={isCanadianBankTransfer ? 12 : undefined}
               className="w-full rounded-xl border border-gray-300 px-3 py-2"
             />
           </label>
           <label className="space-y-1 text-sm">
             <span className="font-medium text-gray-700">
-              Bank ID {isCanadianBankTransfer ? "*" : <span className="text-gray-400">(Optional)</span>}
+              Institution Number {isCanadianBankTransfer ? "*" : <span className="text-gray-400">(Optional)</span>}
             </span>
             <input
               required={isCanadianBankTransfer}
-              value={bankId}
-              onChange={(event) => setBankId(normalizeDigits(event.target.value, 3))}
+              value={institutionNumber}
+              onChange={(event) => setInstitutionNumber(normalizeDigits(event.target.value, 3))}
               inputMode="numeric"
               pattern="\d{3}"
               maxLength={3}
@@ -218,12 +251,12 @@ export default function PaymentStatusCard({
           </label>
           <label className="space-y-1 text-sm">
             <span className="font-medium text-gray-700">
-              Branch ID {isCanadianBankTransfer ? "*" : <span className="text-gray-400">(Optional)</span>}
+              Transit / Branch Number {isCanadianBankTransfer ? "*" : <span className="text-gray-400">(Optional)</span>}
             </span>
             <input
               required={isCanadianBankTransfer}
-              value={branchId}
-              onChange={(event) => setBranchId(normalizeDigits(event.target.value, 5))}
+              value={transitBranchNumber}
+              onChange={(event) => setTransitBranchNumber(normalizeDigits(event.target.value, 5))}
               inputMode="numeric"
               pattern="\d{5}"
               maxLength={5}
@@ -284,7 +317,7 @@ export default function PaymentStatusCard({
           disabled={loading}
           className="rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-60"
         >
-          {loading ? "Saving..." : "Save payout method"}
+          {loading ? "Saving..." : "Save bank account details"}
         </PlanRequiredButton>
         <button
           type="button"
@@ -296,7 +329,7 @@ export default function PaymentStatusCard({
       </div>
 
       <div className="rounded-2xl border border-dashed border-gray-300 px-4 py-3 text-sm text-gray-600">
-        For Ontario / Canada bank transfers, `bankId` and `branchId` are required. `IBAN` and
+        For Ontario / Canada bank transfers, Institution Number, Transit / Branch Number, and Account Number are required. `IBAN` and
         `SWIFT / BIC` are usually not required for domestic CAD EFT payouts.
       </div>
 
