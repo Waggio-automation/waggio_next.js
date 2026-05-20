@@ -368,9 +368,10 @@ export async function sendPayrollRunToTrolley(
   };
 }
 
-export async function sendDuePayrollRunsToTrolley() {
+export async function sendDuePayrollRunsToTrolley(companyId: bigint) {
   const dueRuns = await prisma.payrollRun.findMany({
     where: {
+      companyId,
       status: "PROCESSED",
       providerRef: null,
       sendAt: {

@@ -17,6 +17,13 @@ function getFirstEmployeeId(meta: unknown) {
   return typeof m.employeeIds[0] === "string" ? m.employeeIds[0] : null;
 }
 
+const dateOnlyFormatter = new Intl.DateTimeFormat("en-US", {
+  timeZone: "UTC",
+  year: "numeric",
+  month: "numeric",
+  day: "numeric",
+});
+
 export const dynamic = "force-dynamic";
 
 export default async function PayrollPage() {
@@ -48,11 +55,30 @@ export default async function PayrollPage() {
       select: {
         id: true,
         payDate: true,
+        sendAt: true,
         updatedAt: true,
         status: true,
         failureType: true,
         failureReason: true,
         meta: true,
+        payHistory: {
+          orderBy: { id: "asc" },
+          select: {
+            id: true,
+            netPay: true,
+            status: true,
+            paymentRef: true,
+            failureReason: true,
+            employee: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+          },
+        },
       },
     }),
   ]);
@@ -78,8 +104,9 @@ export default async function PayrollPage() {
 
     return {
       id: run.id.toString(),
-      payday: run.payDate.toLocaleDateString(),
+      payday: dateOnlyFormatter.format(run.payDate),
       payDateIso: run.payDate.toISOString(),
+      sendAtIso: run.sendAt?.toISOString() ?? null,
       status: toPayrollStatusUi(run.status),
       failureType:
         run.failureType === "FUNDING"
@@ -89,6 +116,16 @@ export default async function PayrollPage() {
             : null,
       failureReason: run.failureReason,
       employeeIssueId: run.failureType === "EMPLOYEE" ? employeeFromMeta : null,
+      employees: run.payHistory.map((row) => ({
+        payHistoryId: row.id.toString(),
+        employeeId: row.employee.id.toString(),
+        name: `${row.employee.firstName} ${row.employee.lastName}`,
+        email: row.employee.email,
+        netPay: Number(row.netPay),
+        status: row.status,
+        paymentRef: row.paymentRef,
+        failureReason: row.failureReason,
+      })),
     };
   });
 

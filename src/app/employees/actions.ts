@@ -8,6 +8,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { syncCompanyEmployeeSeatQuantity } from "@/lib/stripe";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
+import {
+  configureEmployeePayout,
+  employeePayoutPayloadSchema,
+  type EmployeePayoutPayload,
+} from "@/lib/payments/employee-payout";
 
 export type CreateEmployeeState = { errors: Record<string, string> } | { success: true } | null;
 const employmentTypeValues = new Set(["FULL_TIME", "PART_TIME", "CONTRACTOR"]);
@@ -30,6 +35,50 @@ function parseOptionalNumber(value: FormDataEntryValue | null) {
   return text ? Number(text) : null;
 }
 
+function parseOptionalPayoutPayload(formData: FormData) {
+  if (asString(formData.get("setupPayoutNow")) !== "yes") {
+    return { payload: null, error: null };
+  }
+
+  const type = asString(formData.get("payoutType"));
+  const payload =
+    type === "paypal"
+      ? {
+          type,
+          primary: true,
+          currency: asString(formData.get("payoutCurrency")).trim().toUpperCase(),
+          emailAddress: asString(formData.get("paypalEmail")).trim(),
+        }
+      : {
+          type: "bank-transfer",
+          primary: true,
+          country: asString(formData.get("payoutCountry")).trim().toUpperCase(),
+          currency: asString(formData.get("payoutCurrency")).trim().toUpperCase(),
+          accountHolderName: asString(formData.get("accountHolderName")).trim(),
+          accountNumber: asString(formData.get("accountNumber")).trim(),
+          institutionNumber: asString(formData.get("institutionNumber")).trim() || undefined,
+          transitBranchNumber: asString(formData.get("transitBranchNumber")).trim() || undefined,
+          iban: asString(formData.get("iban")).trim() || undefined,
+          swiftBic: asString(formData.get("swiftBic")).trim() || undefined,
+        };
+
+  const parsed = employeePayoutPayloadSchema.safeParse(payload);
+  if (!parsed.success) {
+    return {
+      payload: null,
+      error: parsed.error.issues[0]?.message ?? "Invalid payout setup details.",
+    };
+  }
+  if (
+    parsed.data.type === "bank-transfer" &&
+    !/[A-Za-z]/.test(parsed.data.accountHolderName.trim())
+  ) {
+    return { payload: null, error: "Account holder name must include letters." };
+  }
+
+  return { payload: parsed.data as EmployeePayoutPayload, error: null };
+}
+
 export async function createEmployee(prevState: CreateEmployeeState, formData: FormData): Promise<CreateEmployeeState> {
   // 1) 폼 → 객체
   const obj = Object.fromEntries(formData.entries());
@@ -43,6 +92,11 @@ export async function createEmployee(prevState: CreateEmployeeState, formData: F
       if (!errors[field]) errors[field] = issue.message;
     }
     return { errors };
+  }
+
+  const payoutSetup = parseOptionalPayoutPayload(formData);
+  if (payoutSetup.error) {
+    return { errors: { payoutSetup: payoutSetup.error } };
   }
 
   // 3) 저장
@@ -59,8 +113,6 @@ export async function createEmployee(prevState: CreateEmployeeState, formData: F
       employeeNumber: parsed.data.employeeNumber?.trim() || null,
       department: parsed.data.department?.trim() || null,
       jobTitle: parsed.data.jobTitle?.trim() || null,
-      bankTransit: parsed.data.bankTransit?.trim() || null,
-      bankAccount: parsed.data.bankAccount?.trim() || null,
       sin      : encryptSin(parsed.data.sin),
       dentalBenefitsCoverage: parsed.data.dentalBenefitsCoverage,
 
@@ -111,6 +163,27 @@ export async function createEmployee(prevState: CreateEmployeeState, formData: F
   }
 
   await syncCompanyEmployeeSeatQuantity(company.id).catch(() => null);
+
+  if (payoutSetup.payload) {
+    try {
+      await configureEmployeePayout({
+        companyId: company.id,
+        employeeId: created.id,
+        payload: payoutSetup.payload,
+      });
+    } catch (error: unknown) {
+      revalidatePath("/employees");
+      revalidatePath(`/employees/${created.id.toString()}`);
+      return {
+        errors: {
+          payoutSetup:
+            error instanceof Error
+              ? `Employee was created, but payout setup failed: ${error.message}`
+              : "Employee was created, but payout setup failed.",
+        },
+      };
+    }
+  }
 
   revalidatePath("/employees"); // 목록 즉시 갱신
   return { success: true };

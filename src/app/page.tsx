@@ -3,13 +3,11 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 import { getCraDashboard } from "@/lib/cra";
+import WorkspaceNav from "@/app/components/WorkspaceNav";
 
 function getSetupMessage(setup: string | undefined) {
   if (setup === "account_created") {
     return "Account created. Choose a plan when you open a payroll or CRA workflow.";
-  }
-  if (setup === "login_success") {
-    return "Logged in successfully.";
   }
   return null;
 }
@@ -74,42 +72,12 @@ export default async function HomePage({
               </p>
             </div>
           </div>
-          <nav className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto pb-1 text-sm lg:w-auto lg:justify-end lg:overflow-visible lg:pb-0">
-            <Link
-              href={employeesHref}
-              className="inline-flex whitespace-nowrap rounded-full border border-gray-300 px-3 py-2 text-gray-700 hover:bg-gray-50 md:px-3.5"
-            >
-              Employees
-            </Link>
-            <Link
-              href={paystubHref}
-              className="inline-flex whitespace-nowrap rounded-full border border-gray-300 px-3 py-2 text-gray-700 hover:bg-gray-50 md:px-3.5"
-            >
-              Create Paystub
-            </Link>
-            <Link
-              href={craHref}
-              className="inline-flex whitespace-nowrap rounded-full border border-gray-300 px-3 py-2 text-gray-700 hover:bg-gray-50 md:px-3.5"
-            >
-              CRA
-            </Link>
-            <Link
-              href="/company-settings"
-              className="inline-flex whitespace-nowrap rounded-full border border-gray-300 px-3 py-2 text-gray-700 hover:bg-gray-50 md:px-3.5"
-            >
-              Company Settings
-            </Link>
-            <form action="/api/auth/logout" method="post" className="shrink-0">
-              <button
-                type="submit"
-                className="inline-flex whitespace-nowrap rounded-full border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 md:px-3.5"
-              >
-                Log out
-              </button>
-            </form>
-          </nav>
         </div>
       </header>
+
+      <div className="-mx-4 sm:-mx-6 lg:-mx-8">
+        <WorkspaceNav />
+      </div>
 
       {setupMessage ? (
         <section className="inline-flex max-w-fit rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm text-emerald-800">

@@ -40,8 +40,6 @@ export const employeeInputSchema = z.object({
   employeeNumber: z.string().optional(),
   department: z.string().optional(),
   jobTitle: z.string().optional(),
-  bankTransit: z.string().optional(),
-  bankAccount: z.string().optional(),
 
   dentalBenefitsCoverage: DentalBenefitsCoverage.default("NONE"),
   addrLine1: z.string().min(1),

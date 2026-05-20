@@ -109,7 +109,8 @@ export type CreateRecipientAccountInput =
   | PaypalRecipientAccountInput;
 
 export interface RecipientAccount {
-  id: string;
+  id?: string;
+  recipientAccountId?: string;
   recipientId?: string;
   type: RecipientAccountType;
   primary?: boolean;
