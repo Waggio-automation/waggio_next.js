@@ -69,7 +69,6 @@ type MissingPayoutEmployee = {
 
 export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
   const [retrying, setRetrying] = useState<string | null>(null);
-  const [dispatchingDueRuns, setDispatchingDueRuns] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [showCompletedRuns, setShowCompletedRuns] = useState(false);
   const [missingPayoutEmployees, setMissingPayoutEmployees] = useState<
@@ -81,11 +80,12 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
   const completedRuns = runs.filter((run) => isHideableCompletedStatus(run.status));
   const defaultVisibleCompletedRuns = completedRuns
     .filter((run) => {
-    const payDateMs = new Date(run.payDateIso).getTime();
-    if (Number.isNaN(payDateMs)) {
-      return true;
-    }
-
+      if (run.status === "processed") {
+        if (!run.sendAtIso) return true;
+        return new Date(run.sendAtIso).getTime() > now;
+      }
+      const payDateMs = new Date(run.payDateIso).getTime();
+      if (Number.isNaN(payDateMs)) return true;
       return payDateMs <= now && now - payDateMs < ONE_DAY_MS;
     })
     .slice(0, MAX_DEFAULT_COMPLETED_RUNS);
@@ -93,12 +93,6 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
     ? runs
     : [...activeRuns, ...defaultVisibleCompletedRuns];
   const hiddenCompletedRunsCount = completedRuns.length - defaultVisibleCompletedRuns.length;
-  const nextDueProcessedRun = runs.find((run) => {
-    if (run.status !== "processed") return false;
-    if (!run.sendAtIso) return true;
-    const sendAtMs = new Date(run.sendAtIso).getTime();
-    return Number.isNaN(sendAtMs) || sendAtMs <= now;
-  });
 
   async function retryFunding(runId: string) {
     try {
@@ -122,72 +116,14 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
     }
   }
 
-  async function sendDuePayrollRuns(payrollRunId?: string) {
-    try {
-      setMessage(null);
-      setDispatchingDueRuns(true);
-
-      const query = payrollRunId ? `?payrollRunId=${encodeURIComponent(payrollRunId)}` : "";
-      const preflightRes = await fetch(`/api/payroll/preflight-check${query}`);
-      const preflightData = await preflightRes.json();
-
-      if (!preflightRes.ok) {
-        throw new Error(
-          preflightData?.error || "Preflight check failed."
-        );
-      }
-
-      const missing: MissingPayoutEmployee[] = preflightData?.missing ?? [];
-      if (missing.length > 0) {
-        setMissingPayoutEmployees(missing);
-        return;
-      }
-
-      const res = await fetch("/api/payroll/send-due", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payrollRunId ? { payrollRunId } : {}),
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data?.error || "Failed to send due payroll runs.");
-      }
-
-      setMessage(
-        data?.count > 0
-          ? `Started payout processing for ${data.count} due payroll run${data.count === 1 ? "" : "s"}.`
-          : "No due payroll runs were ready to send."
-      );
-    } catch (error: unknown) {
-      setMessage(
-        error instanceof Error ? error.message : "Failed to send due payroll runs."
-      );
-    } finally {
-      setDispatchingDueRuns(false);
-    }
-  }
-
   return (
     <section className="rounded-3xl border border-gray-200 bg-white shadow-sm">
       <div className="border-b border-gray-200 p-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900">Payroll status</h2>
-            <p className="mt-1 text-sm text-gray-600">
-              Processed run + sendAt reached -&gt; Trolley batch -&gt; Paying employees -&gt; Paid
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => sendDuePayrollRuns(nextDueProcessedRun?.id)}
-            disabled={dispatchingDueRuns || !nextDueProcessedRun}
-            className="rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-          >
-            {dispatchingDueRuns ? "Sending due run..." : "Send latest due payroll"}
-          </button>
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900">Payroll status</h2>
+          <p className="mt-1 text-sm text-gray-600">
+            Paystub saved → Send date reached → Payment processing → Paid
+          </p>
         </div>
       </div>
 

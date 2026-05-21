@@ -368,6 +368,36 @@ export async function sendPayrollRunToTrolley(
   };
 }
 
+export async function sendAllDuePayrollRunsToTrolley() {
+  const dueRuns = await prisma.payrollRun.findMany({
+    where: {
+      status: "PROCESSED",
+      providerRef: null,
+      sendAt: { lte: new Date() },
+    },
+    select: { id: true },
+    orderBy: { sendAt: "asc" },
+  });
+
+  const processed: Array<{ payrollRunId: string; batchId?: string; error?: string }> = [];
+
+  for (const run of dueRuns) {
+    try {
+      const result = await sendPayrollRunToTrolley(run.id, { enforceDue: true });
+      processed.push({ payrollRunId: result.payrollRunId, batchId: result.batchId });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unexpected error while sending payroll run.";
+      await prisma.payrollRun.update({
+        where: { id: run.id },
+        data: { status: "FAILED", failureType: "FUNDING", failureReason: message },
+      });
+      processed.push({ payrollRunId: run.id.toString(), error: message });
+    }
+  }
+
+  return { count: processed.length, processed };
+}
+
 export async function sendDuePayrollRunsToTrolley(companyId: bigint) {
   const dueRuns = await prisma.payrollRun.findMany({
     where: {

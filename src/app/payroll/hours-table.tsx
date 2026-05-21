@@ -3,7 +3,10 @@
 
 import { useMemo, useState, useRef, useEffect, Fragment  } from "react";
 import PeriodRangePicker from "./components/PeriodRangePicker";
-import { getOntarioHolidaysInRange } from "@/lib/ontarioHolidays";
+import {
+  getOntarioHolidayForYmd,
+  getOntarioHolidaysInRange,
+} from "@/lib/ontarioHolidays";
 import PlanRequiredButton from "@/app/components/PlanRequiredButton";
 import { calculatePayrollAmounts } from "@/lib/payroll/calculatePayroll";
 
@@ -45,6 +48,26 @@ function parseYmd(s: string) {
   if (!s) return undefined;
   const [y, m, d] = s.split("-").map(Number);
   return new Date(y, m - 1, d);
+}
+
+function isBusinessDay(date: Date) {
+  const day = date.getDay();
+  if (day === 0 || day === 6) return false;
+  return !getOntarioHolidayForYmd(fmtDate(date));
+}
+
+function subtractBusinessDays(date: Date, businessDays: number) {
+  const result = new Date(date);
+  let remaining = businessDays;
+
+  while (remaining > 0) {
+    result.setDate(result.getDate() - 1);
+    if (isBusinessDay(result)) {
+      remaining -= 1;
+    }
+  }
+
+  return result;
 }
 
 function DateField({
@@ -112,12 +135,12 @@ export default function HoursTable({
     return getOntarioHolidaysInRange(start, end);
   }, [period.start, period.end]);
 
-  // Automatically set "Send paystub on" date when payDate is selected
+  // Automatically set "Send paystub on" date when payDate is selected.
   useEffect(() => {
     if (payDate && !sendOn) {
-      const d = new Date(payDate);
-      d.setDate(d.getDate() - 2);
-      setSendOn(fmtDate(d));
+      const d = parseYmd(payDate);
+      if (!d) return;
+      setSendOn(fmtDate(subtractBusinessDays(d, 2)));
     }
   }, [payDate, sendOn]);
 
@@ -675,8 +698,8 @@ export default function HoursTable({
 
           <div className="mt-1 flex items-center justify-between">
             <p className="text-[11px] text-gray-500">
-              Tip: &quot;Send paystub on&quot; can auto-set to 2 days before the pay date if left
-              blank.
+              Tip: &quot;Send paystub on&quot; can auto-set to 2 business days before the pay
+              date if left blank.
             </p>
 
             <PlanRequiredButton
