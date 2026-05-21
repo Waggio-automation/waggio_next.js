@@ -124,7 +124,7 @@ export async function POST(req: Request) {
             ded_eht: amounts.ded_eht,
             ded_wsib: amounts.ded_wsib,
             netPay: amounts.netPay,
-            status: "PENDING",
+            status: "READY",
             review_valid: true,
             review_errors: [],
             review_warnings: [],
