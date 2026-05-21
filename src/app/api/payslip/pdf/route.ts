@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import puppeteer from "puppeteer";
-import type { Browser } from "puppeteer";
+import { put } from "@vercel/blob";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -12,8 +11,6 @@ type PdfRequestBody = {
 };
 
 export async function POST(req: Request) {
-  let browser: Browser | null = null;
-
   try {
     const body = (await req.json()) as PdfRequestBody;
     const html = typeof body?.html === "string" ? body.html : "";
@@ -30,31 +27,51 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing or invalid payHistoryId" }, { status: 400 });
     }
 
-    browser = await puppeteer.launch({ headless: true });
+    const isVercel = !!process.env.VERCEL;
+    let browser;
+
+    if (isVercel) {
+      const chromium = (await import("@sparticuz/chromium")).default;
+      const puppeteer = (await import("puppeteer-core")).default;
+      browser = await puppeteer.launch({
+        args: chromium.args,
+        executablePath: await chromium.executablePath(),
+        headless: true,
+      });
+    } else {
+      const puppeteer = (await import("puppeteer")).default;
+      browser = await puppeteer.launch({ headless: true });
+    }
+
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "domcontentloaded" });
 
-    const pdfBuffer = await page.pdf({
+    const pdfBuffer = Buffer.from(await page.pdf({
       format: "A4",
       printBackground: true,
-    });
+    }));
+
+    await browser.close();
 
     const fileName = `payslip_${payHistoryId}.pdf`;
-    const payslipsDir = path.join(process.cwd(), "public", "payslips");
-    const filePath = path.join(payslipsDir, fileName);
 
-    await mkdir(payslipsDir, { recursive: true });
-    await writeFile(filePath, pdfBuffer);
-
-    return NextResponse.json({ pdfUrl: `/payslips/${fileName}` });
+    if (isVercel) {
+      const blob = await put(fileName, pdfBuffer, {
+        access: "public",
+        contentType: "application/pdf",
+      });
+      return NextResponse.json({ pdfUrl: blob.url });
+    } else {
+      const payslipsDir = path.join(process.cwd(), "public", "payslips");
+      const filePath = path.join(payslipsDir, fileName);
+      await mkdir(payslipsDir, { recursive: true });
+      await writeFile(filePath, pdfBuffer);
+      return NextResponse.json({ pdfUrl: `/payslips/${fileName}` });
+    }
   } catch (error: unknown) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to generate PDF" },
       { status: 500 }
     );
-  } finally {
-    if (browser) {
-      await browser.close();
-    }
   }
 }
