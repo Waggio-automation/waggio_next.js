@@ -4,6 +4,7 @@ import { updateEmployeeCraProfileAction, updateEmployeeProfileAction } from "../
 import PaymentStatusCard from "./payment-status-card";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 import PlanRequiredButton from "@/app/components/PlanRequiredButton";
+import AddressAutocompleteFields from "@/app/components/AddressAutocompleteFields";
 
 function toUiPayoutStatus(status: string) {
   switch (status) {
@@ -189,59 +190,27 @@ export default async function EmployeeDetailPage({
             </label>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className={labelClassName}>
-              <span>Address line 1 *</span>
-              <input
-                name="addrLine1"
-                required
-                defaultValue={employee.addrLine1}
-                className={fieldClassName}
-              />
-            </label>
-            <label className={labelClassName}>
-              <span>Address line 2</span>
-              <input
-                name="addrLine2"
-                defaultValue={employee.addrLine2 ?? ""}
-                className={fieldClassName}
-              />
-            </label>
-            <label className={labelClassName}>
-              <span>City *</span>
-              <input
-                name="addrCity"
-                required
-                defaultValue={employee.addrCity}
-                className={fieldClassName}
-              />
-            </label>
-            <label className={labelClassName}>
-              <span>Province</span>
-              <input
-                name="addrProvince"
-                defaultValue={employee.addrProvince}
-                className={fieldClassName}
-              />
-            </label>
-            <label className={labelClassName}>
-              <span>Postal code *</span>
-              <input
-                name="addrPostal"
-                required
-                defaultValue={employee.addrPostal}
-                className={fieldClassName}
-              />
-            </label>
-            <label className={labelClassName}>
-              <span>Country</span>
-              <input
-                name="addrCountry"
-                defaultValue={employee.addrCountry}
-                className={fieldClassName}
-              />
-            </label>
-          </div>
+          <AddressAutocompleteFields
+            names={{
+              line1: "addrLine1",
+              line2: "addrLine2",
+              city: "addrCity",
+              province: "addrProvince",
+              postal: "addrPostal",
+              country: "addrCountry",
+            }}
+            defaults={{
+              line1: employee.addrLine1,
+              line2: employee.addrLine2,
+              city: employee.addrCity,
+              province: employee.addrProvince,
+              postal: employee.addrPostal,
+              country: employee.addrCountry,
+            }}
+            fieldClassName={fieldClassName}
+            labelClassName={labelClassName}
+            required={{ line1: true, city: true, postal: true }}
+          />
 
           <div className="grid gap-4 md:grid-cols-3">
             <label className={labelClassName}>

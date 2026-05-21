@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { createEmployee } from "./actions";
 import PayTypeFields from "./pay-type-fields";
 import PlanRequiredButton from "@/app/components/PlanRequiredButton";
+import AddressAutocompleteFields from "@/app/components/AddressAutocompleteFields";
 
 export default function CreateEmployeeForm({ hasSelectedPlan }: { hasSelectedPlan: boolean }) {
   const [state, action] = useActionState(createEmployee, null);
@@ -109,38 +110,22 @@ export default function CreateEmployeeForm({ hasSelectedPlan }: { hasSelectedPla
             name="dentalBenefitsCoverage"
             value="NONE"
           />
-          <label className={labelClassName}>
-            <span>Address line 1 *</span>
-            <input name="addrLine1" required className={fieldClassName} />
-          </label>
-          <label className={labelClassName}>
-            <span>Address line 2</span>
-            <input name="addrLine2" className={fieldClassName} />
-          </label>
-          <label className={labelClassName}>
-            <span>City *</span>
-            <input name="addrCity" required className={fieldClassName} />
-          </label>
-          <label className={labelClassName}>
-            <span>Province</span>
-            <input
-              name="addrProvince"
-              defaultValue="ON"
-              className={fieldClassName}
-            />
-          </label>
-          <label className={labelClassName}>
-            <span>Postal Code *</span>
-            <input name="addrPostal" required className={fieldClassName} />
-          </label>
-          <label className={labelClassName}>
-            <span>Country</span>
-            <input
-              name="addrCountry"
-              defaultValue="CA"
-              className={fieldClassName}
-            />
-          </label>
+          <AddressAutocompleteFields
+            names={{
+              line1: "addrLine1",
+              line2: "addrLine2",
+              city: "addrCity",
+              province: "addrProvince",
+              postal: "addrPostal",
+              country: "addrCountry",
+            }}
+            defaults={{ province: "ON", country: "CA" }}
+            labels={{ postal: "Postal Code" }}
+            fieldClassName={fieldClassName}
+            labelClassName={labelClassName}
+            gridClassName="contents"
+            required={{ line1: true, city: true, postal: true }}
+          />
         </div>
         <div className="grid grid-cols-3 gap-4">
           <label className={labelClassName}>

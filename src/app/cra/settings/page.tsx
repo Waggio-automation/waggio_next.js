@@ -3,6 +3,7 @@ import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 import { getMissingT4FilingSettings, getOrCreateCompanyPayrollSettings } from "@/lib/cra";
 import { saveCraSettingsAction } from "../actions";
 import PlanRequiredButton from "@/app/components/PlanRequiredButton";
+import AddressAutocompleteFields from "@/app/components/AddressAutocompleteFields";
 
 const remitterTypeOptions: Array<{ value: RemitterType; label: string; help: string }> = [
   {
@@ -117,77 +118,36 @@ export default async function CraSettingsPage({
               <option value="F">French</option>
             </select>
           </label>
-          <label className="block md:col-span-2">
-            <span className="mb-1 block text-sm text-gray-600">Employer address line 1</span>
-            <input
-              type="text"
-              name="addressLine1"
-              defaultValue={settings.addressLine1 ?? ""}
-              maxLength={60}
-              required
-              className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
-            />
-          </label>
-          <label className="block md:col-span-2">
-            <span className="mb-1 block text-sm text-gray-600">Employer address line 2</span>
-            <input
-              type="text"
-              name="addressLine2"
-              defaultValue={settings.addressLine2 ?? ""}
-              maxLength={60}
-              className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-sm text-gray-600">City</span>
-            <input
-              type="text"
-              name="city"
-              defaultValue={settings.city ?? ""}
-              maxLength={40}
-              required
-              className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-sm text-gray-600">Province code</span>
-            <input
-              type="text"
-              name="provinceCode"
-              defaultValue={settings.provinceCode ?? "ON"}
-              pattern="[A-Za-z]{2}"
-              maxLength={2}
-              required
-              title="Enter a 2-letter province or territory code."
-              className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-sm text-gray-600">Postal code</span>
-            <input
-              type="text"
-              name="postalCode"
-              defaultValue={settings.postalCode ?? ""}
-              pattern="[A-Za-z]\d[A-Za-z][ ]?\d[A-Za-z]\d"
-              maxLength={7}
-              required
-              title="Enter a Canadian postal code like A1A 1A1."
-              className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-sm text-gray-600">Country code</span>
-            <input
-              type="text"
-              name="countryCode"
-              defaultValue={settings.countryCode ?? "CAN"}
-              pattern="[A-Za-z]{3}"
-              maxLength={3}
-              required
-              title="Enter a 3-letter country code like CAN."
-              className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
-            />
-          </label>
+          <AddressAutocompleteFields
+            names={{
+              line1: "addressLine1",
+              line2: "addressLine2",
+              city: "city",
+              province: "provinceCode",
+              postal: "postalCode",
+              country: "countryCode",
+            }}
+            defaults={{
+              line1: settings.addressLine1,
+              line2: settings.addressLine2,
+              city: settings.city,
+              province: settings.provinceCode ?? "ON",
+              postal: settings.postalCode,
+              country: settings.countryCode ?? "CAN",
+            }}
+            labels={{
+              line1: "Employer address line 1",
+              line2: "Employer address line 2",
+              province: "Province code",
+              country: "Country code",
+            }}
+            fieldClassName="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
+            labelClassName="block [&>span]:mb-1 [&>span]:block [&>span]:text-sm [&>span]:text-gray-600"
+            gridClassName="contents"
+            required={{ line1: true, city: true, province: true, postal: true, country: true }}
+            maxLengths={{ line1: 60, line2: 60, city: 40, province: 2, postal: 7, country: 3 }}
+            countryCodeFormat="alpha3"
+          />
           <label className="block">
             <span className="mb-1 block text-sm text-gray-600">Reminder email</span>
             <input
