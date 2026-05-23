@@ -66,7 +66,8 @@ export async function POST(req: Request) {
       const filePath = path.join(payslipsDir, fileName);
       await mkdir(payslipsDir, { recursive: true });
       await writeFile(filePath, pdfBuffer);
-      return NextResponse.json({ pdfUrl: `/payslips/${fileName}` });
+      const baseUrl = process.env.APP_URL ?? "http://localhost:3000";
+      return NextResponse.json({ pdfUrl: `${baseUrl}/payslips/${fileName}` });
     }
   } catch (error: unknown) {
     return NextResponse.json(

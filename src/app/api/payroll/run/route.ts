@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { calculatePayrollAmounts } from "@/lib/payroll/calculatePayroll";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
+import { sendPayrollRunToTrolley } from "@/lib/payments/trolley-payroll";
 
 const itemSchema = z.object({
   employeeId: z.string().min(1),
@@ -123,7 +124,7 @@ export async function POST(req: Request) {
             ded_eht: amounts.ded_eht,
             ded_wsib: amounts.ded_wsib,
             netPay: amounts.netPay,
-            status: "PENDING",
+            status: amounts.netPay > 0 ? "READY" : "PENDING",
             review_valid: true,
             review_errors: [],
             review_warnings: [],
@@ -164,9 +165,23 @@ export async function POST(req: Request) {
       }
     }
 
+    let trolleyResult: { sent: boolean; batchId?: string; error?: string } = { sent: false };
+    const sendAtDate = new Date(sendAt);
+    if (sendAtDate <= new Date()) {
+      try {
+        const result = await sendPayrollRunToTrolley(payrollRun.id, { enforceDue: true });
+        trolleyResult = { sent: true, batchId: result.batchId };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        console.error("Failed to send payroll run to Trolley immediately", JSON.stringify(error, Object.getOwnPropertyNames(error)));
+        trolleyResult = { sent: false, error: msg };
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       payrollRunId: payrollRun.id.toString(),
+      trolley: trolleyResult,
     });
   } catch (error: unknown) {
     return NextResponse.json(
