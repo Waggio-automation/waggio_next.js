@@ -1,0 +1,168 @@
+// ─────────────────────────────────────────────
+// PaystubRun
+// PDF 생성, 이메일 발송, 발송 스케줄 관리
+// ─────────────────────────────────────────────
+model PaystubRun {
+  id          BigInt          @id @default(autoincrement())
+  companyId   BigInt
+  payDate     DateTime
+  periodStart DateTime
+  periodEnd   DateTime
+  scheduledAt DateTime
+  status      PaystubRunStatus @default(SCHEDULED)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company   Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  paystubs  Paystub[]
+
+  @@index([companyId])
+  @@index([payDate, status])
+}
+
+enum PaystubRunStatus {
+  SCHEDULED
+  PROCESSING
+  SENT
+  FAILED
+}
+
+// ─────────────────────────────────────────────
+// PaytransferRun
+// 자금 조달, Trolley 이체, 빌링 관리
+// ─────────────────────────────────────────────
+model PaytransferRun {
+  id          BigInt              @id @default(autoincrement())
+  companyId   BigInt
+  payDate     DateTime
+  periodStart DateTime
+  periodEnd   DateTime
+  sendAt      DateTime
+  status      PaytransferRunStatus @default(SCHEDULED)
+  providerRef String?             // Trolley batch ID
+
+  // 빌링
+  billingMonthKey       String?
+  extraRunSequence      Int?
+  extraRunFeeCents      Int?
+  extraRunInvoiceItemId String?
+  extraRunBilledAt      DateTime?
+  extraRunBillingError  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  paytransfers PayTransfer[]
+
+  @@index([companyId])
+  @@index([sendAt])
+  @@index([companyId, billingMonthKey])
+}
+
+enum PaytransferRunStatus {
+  SCHEDULED
+  FUNDING
+  PAYING
+  PAID
+  FAILED
+}
+
+// ─────────────────────────────────────────────
+// Paystub
+// 급여 계산 결과 + 명세서 발송
+// 한번 확정되면 값이 바뀌면 안 됨
+// ─────────────────────────────────────────────
+model Paystub {
+  id             BigInt  @id @default(autoincrement())
+  employeeId     BigInt
+  paystubRunId   BigInt?
+  sequenceNumber String?
+
+  // 급여 기간
+  payDate     DateTime
+  periodStart DateTime
+  periodEnd   DateTime
+
+  // 급여 계산 결과
+  grossPay    Decimal
+  netPay      Decimal
+  hoursWorked Decimal?
+  ded_cpp        Decimal @default(0)
+  ded_ei         Decimal @default(0)
+  ded_income_tax Decimal @default(0)
+  ded_eht        Decimal @default(0)
+  ded_wsib       Decimal @default(0)
+
+  // 검토 결과
+  review_valid    Boolean  @default(true)
+  review_errors   String[] @default([])
+  review_warnings String[] @default([])
+
+  // 명세서 발송
+  paystubStatus        PaystubStatus @default(SCHEDULED)
+  emailProvider        String?
+  emailSentAt          DateTime?
+  paystubFailureReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employee    Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  paystubRun  PaystubRun?    @relation(fields: [paystubRunId], references: [id], onDelete: SetNull)
+  transfer    PayTransfer?
+
+  @@index([employeeId, payDate])
+  @@index([paystubRunId])
+}
+
+enum PaystubStatus {
+  SCHEDULED
+  PROCESSING
+  SENT
+  FAILED
+}
+
+// ─────────────────────────────────────────────
+// PayTransfer
+// 이체 프로세스 (상태가 계속 바뀜)
+// employeeId는 생성 시 Paystub에서 가져옴 (직접 입력 X)
+// ─────────────────────────────────────────────
+model PayTransfer {
+  id               BigInt  @id @default(autoincrement())
+  paystubId        BigInt  @unique   // Paystub이랑 1:1
+  employeeId       BigInt            // Paystub에서 복사, 직접 조회용
+  paytransferRunId BigInt?
+
+  // 이체 정보
+  paymentProvider     String?
+  paymentRef          String?   // Trolley payment ID
+  paidAt              DateTime?
+  estimatedDeliveryAt DateTime? // Trolley 예상 입금일
+
+  // 이체 상태
+  paytransferStatus      PaytransferStatus @default(PENDING)
+  attemptCount           Int               @default(0)
+  lastAttemptAt          DateTime?
+  paytransferFailureReason String?
+  trolleyEvents          Json?             // webhook 감사 로그
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  paystub        Paystub         @relation(fields: [paystubId], references: [id], onDelete: Cascade)
+  employee       Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  paytransferRun PaytransferRun? @relation(fields: [paytransferRunId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId])
+  @@index([paytransferRunId])
+}
+
+enum PaytransferStatus {
+  PENDING           // 이체 전
+  TRANSFER_SENDING  // Trolley 처리 중
+  TRANSFER_SENT     // 이체 완료
+  FAILED            // Trolley에서 막힘 (은행까지 못 감)
+  RETURNED          // 은행까지 갔다가 반환됨
+}
