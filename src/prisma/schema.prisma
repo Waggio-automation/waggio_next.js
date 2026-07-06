@@ -411,8 +411,8 @@ enum DentalBenefitsCoverage {
 }
 
 enum PayHistoryStatus {
-  PENDING
-  PROCESSING
+  PENDING     //안쓰임
+  PROCESSING //안쓰임
   PROCESSED
   READY
   SENT
