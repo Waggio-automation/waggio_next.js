@@ -23,8 +23,9 @@ Status vocabulary: **Existing and verified** is limited to tested narrow behavio
 | Employer funding | Missing/unclear | Status labels exist, but no explicit funding intent/confirmation flow or employer bank/KYB model. |
 | Automatic employee transfers | Partial; unsafe | Trolley batch/payment submission exists; no claim lock, webhook, reconciliation, return/reversal handling. |
 | Paystub HTML/PDF | Partial; unsafe | External PDF proxy exists but is open, arbitrary HTML, public blob; primary payroll does not call it. |
-| Paystub email/employee access | Missing in repo | No paystub mailer or employee portal; legacy interfaces imply an unknown external caller. n8n removal is approved and a direct durable-worker replacement is required. |
+| Paystub email/employee access | Missing in repo; explicit temporary gap | No paystub mailer or employee portal. The historical external workflow hooks were removed on 2026-07-17; primary payroll creation does not generate or deliver statements. AUTO-02 tracks the future direct durable-worker implementation. |
 | Payroll/transfer/paystub history | Partial | Recent run statuses only; no register, filters, reconciliation, document history, or correction chain. |
+| Historical workflow integration | Removed from application; operational retirement pending | Outbound calls and global shared-secret bypasses were removed. Retained PayHistory/PayrollRun APIs require an OWNER/ADMIN session, enforce tenant scope, and return allowlisted DTOs. Hosted workflows and deployment variables require the manual Day 3 checklist. |
 | Exports | Partial | Legacy PENDING-row JSON endpoint; no governed CSV/register exports. |
 | CRA remittance calculation | Existing but requires correction; legal verification | All pay-history rows included; accelerated rules are explicit fallback; mutable regeneration. |
 | CRA payment | Partial/manual | Users record an external payment; Waggio does not remit to CRA. |

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
+import { requirePayrollApiAuth } from "@/lib/payroll-api-auth";
 
 function serializeBigInt<T>(value: T): T {
   return JSON.parse(
@@ -11,16 +11,11 @@ function serializeBigInt<T>(value: T): T {
 }
 
 export async function GET(
-  req: Request,
+  _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const n8nSecret = process.env.N8N_SECRET;
-  const providedSecret = req.headers.get("x-n8n-secret");
-  const isN8nRequest = Boolean(n8nSecret) && providedSecret === n8nSecret;
-
-  const companyId = isN8nRequest
-    ? null
-    : (await requireCompanyAdminOrRedirect()).id;
+  const auth = await requirePayrollApiAuth();
+  if (!auth.ok) return auth.response;
 
   const { id } = await params;
 
@@ -31,26 +26,39 @@ export async function GET(
     return NextResponse.json({ error: "Invalid payroll run id" }, { status: 400 });
   }
 
-  const payrollRun = await prisma.payrollRun.findUnique({
-    where: {
-      id: payrollRunId,
-      ...(companyId === null ? {} : { companyId }),
-    },
-    include: {
+  const payrollRun = await prisma.payrollRun.findFirst({
+    where: { id: payrollRunId, companyId: auth.company.id },
+    select: {
+      id: true,
+      payDate: true,
+      sendAt: true,
+      status: true,
+      failureType: true,
+      createdAt: true,
+      updatedAt: true,
       payHistory: {
-        include: {
+        select: {
+          id: true,
+          employeeId: true,
+          payDate: true,
+          periodStart: true,
+          periodEnd: true,
+          hoursWorked: true,
+          grossPay: true,
+          ded_cpp: true,
+          ded_ei: true,
+          ded_income_tax: true,
+          ded_eht: true,
+          ded_wsib: true,
+          netPay: true,
+          status: true,
+          paidAt: true,
           employee: {
             select: {
               id: true,
               firstName: true,
               lastName: true,
-              email: true,
               employeeNumber: true,
-              department: true,
-              jobTitle: true,
-              transitBranchNumber: true,
-              accountNumber: true,
-              hourlyRate: true,
             },
           },
         },

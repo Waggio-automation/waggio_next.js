@@ -5,18 +5,19 @@ This roadmap implements `final-design.md`. No phase starts until its blocking de
 ## 1 — Critical containment
 
 - **Outcome:** immediate account, PII, document and ambiguous-payment exposure is reduced without changing payroll calculations or deleting callers.
-- **Scope:** contain unauthenticated admin-link and arbitrary/public PDF; deny or narrowly allowlist global n8n reads/writes; stop unsafe SIN write/display paths and destructive lifecycle actions; prohibit blind Trolley retry; rotate exposed credentials; inventory public blobs/callers; establish redacted correlation and backup/restore.
+- **Scope:** contain unauthenticated admin-link and arbitrary/public PDF; preserve the completed removal of historical global workflow reads/writes; stop unsafe SIN write/display paths and destructive lifecycle actions; prohibit blind Trolley retry; rotate exposed credentials; inventory public blobs/callers; establish redacted correlation and backup/restore.
 - **Dependencies:** deployed-route/log access, incident owner, backup authority and provider/environment owners.
 - **Acceptance:** unauthorized route/object and cross-tenant negative tests pass; credentials are rotated without being copied to docs/logs; restore rehearsal succeeds; caller inventory exists; no production provider/email side effect is exercised by tests.
 - **Rollback/risk:** use reversible gates and a time-limited, least-privilege compatibility allowlist only when a verified live caller would otherwise break. Never restore public/global access.
 
-## 2 — n8n workflow replacement and safe retirement
+## 2 — Direct automation implementation and historical workflow retirement
 
-- **Outcome:** every active/reachable n8n outcome is owned by Waggio and direct providers; hosted workflows and credentials can be safely retired.
-- **Scope:** implement N8N-01 through N8N-07 from `../audit/n8n-usage-audit.md` using Next.js commands, PostgreSQL job/outbox/inbox/idempotency/audit records, authenticated workers, approved cron and direct provider adapters. Shadow comparisons must not duplicate side effects.
-- **Dependencies:** Phase 1 containment/evidence; deployed n8n workflow/export/execution ownership; minimal durable worker/job foundation aligned to the target.
-- **Acceptance:** direct workflows pass tenant/idempotency/retry/audit tests; zero successful legacy calls and zero n8n executions for the approved observation window; schedules disabled; credentials revoked; compatibility monitoring clean. Code/config deletion is a separately reviewed final step.
-- **Rollback/risk:** re-enable only the narrow non-global compatibility adapter before credential revocation if an identified caller fails; keep direct job evidence and reconcile duplicate risk. n8n never regains authoritative state.
+- **Implementation status:** application removal completed 2026-07-17: outbound calls and shared-secret bypasses are gone, retained APIs are authenticated/tenant-scoped, and DTOs exclude sensitive employee/banking data. This did not implement Job/Outbox/Inbox or prove external retirement.
+- **Outcome:** every required automation outcome is owned by Waggio and direct providers, while historical hosted workflows and credentials are retired with evidence.
+- **Scope:** implement AUTO-01 through AUTO-03 from `../audit/n8n-usage-audit.md` using Next.js commands, PostgreSQL job/outbox/inbox/idempotency/audit records, authenticated workers, approved cron, and direct provider adapters. Complete OPS-01/OPS-02 using the manual checklist. Shadow comparisons must not duplicate side effects.
+- **Dependencies:** Phase 1 containment/evidence; deployed workflow/export/execution ownership; minimal durable worker/job foundation aligned to the target.
+- **Acceptance:** direct workflows pass tenant/idempotency/retry/audit tests; zero required legacy callers and zero hosted executions for the approved observation window; schedules disabled; credentials revoked; deployment variables removed; monitoring clean; temporary gaps have owners.
+- **Rollback/risk:** do not restore the global compatibility credential or outbound integration. Pause the affected automation, repair the authenticated application path, retain direct job evidence, and reconcile duplicate risk. The rejected platform never regains authoritative state.
 
 ## 3 — Foundational identity, tenant, retention, and PII changes
 
