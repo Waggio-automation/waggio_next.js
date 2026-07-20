@@ -10,12 +10,12 @@ Canonical model/status rules are in `final-design.md`; implementation order is i
 | Preserve history/delete restrictions (C-04) | 1/3/4 | employee/company lifecycle | Company, Employee, RetentionAction/Hold | object/provider retention | DB,A,M,OPS | Critical correction |
 | Prevent ambiguous/duplicate Trolley action (C-05) | 1/6 | cron/manual submit/retry | instruction/attempt/event/reconcile | Trolley | C,DB,A,I,OPS | Critical correction |
 | Finalized-only compliance source (C-06) | 5/9/10 | remittance/T4 commands | PayrollResult, allocations, tax package | CRA specifications | U,DB,A,I,M | Critical correction/legal validation |
-| N8N-01 employee event replacement | 2 | employee server action | AuditEvent, OutboxEvent, Job | direct Stripe/Trolley if needed | DB,A,I,C,OPS | Active when configured; external recipient unknown |
-| N8N-02 payroll event replacement | 2/5 | payroll finalize command | PayrollRun/Result, OutboxEvent, Job | direct downstream workers | DB,A,I,E2E,OPS | Active when configured; external recipient unknown |
-| N8N-03 schedule flow replacement | 2/5 | named commands + approved cron | PayrollRun, Job/Attempt | direct workers | U,DB,A,I,OPS | Legacy reachable; external caller unknown |
-| N8N-04/06/07 global reads replacement | 1/2 | tenant queries; worker DB claim | tenant-owned result/run/job | none | DB,A,AX,E2E | Legacy reachable; global access must end |
-| N8N-05 arbitrary patch replacement | 1/2/6/7 | worker domain commands | attempts/events/statements/deliveries | Trolley/Railway/email | C,DB,A,I,E2E | Legacy reachable; external caller unknown |
-| n8n workflow/credential retirement | 2 | deployment/workflow operations | audit/retirement evidence | hosted n8n/environment | A,C,OPS | Approved outcome; zero-caller gate required |
+| N8N-01 employee event replacement | 2 | employee server action | AuditEvent, OutboxEvent, Job | direct Stripe/Trolley if needed | DB,A,I,C,OPS | Historical call removed 2026-07-17; AUTO-01 outcome verification pending |
+| N8N-02 payroll event replacement | 2/5 | payroll finalize command | PayrollRun/Result, OutboxEvent, Job | direct downstream workers | DB,A,I,E2E,OPS | Historical call removed 2026-07-17; AUTO-02 statement/delivery gap explicit |
+| N8N-03 schedule flow replacement | 2/5 | named commands + approved cron | PayrollRun, Job/Attempt | direct workers | U,DB,A,I,OPS | Historical call removed 2026-07-17; local schedule-only route remains, AUTO-03 pending |
+| N8N-04/06/07 global reads replacement | 1/2 | tenant queries; worker DB claim | tenant-owned result/run/job | none | DB,A,AX,E2E | Global access removed 2026-07-17; authenticated tenant DTO routes retained |
+| N8N-05 arbitrary patch replacement | 1/2/6/7 | worker domain commands | attempts/events/statements/deliveries | Trolley/Railway/email | C,DB,A,I,E2E | Global access removed 2026-07-17; authenticated tenant mutation retained temporarily |
+| n8n workflow/credential retirement | 2 | deployment/workflow operations | audit/retirement evidence | hosted n8n/environment | A,C,OPS | Application removal complete; hosted workflow/configuration retirement pending OPS-01/OPS-02 |
 | Verified account/session/membership | 3 | target auth/team APIs | User, Membership, Session, Invitation | SMTP/IdP | A,DB,I,E2E,AX | Partial/correction |
 | Explicit tenant ownership | 3/4 | all commands/queries | companyId + same-company constraints | PostgreSQL | DB,A,I,M | Missing/inconsistent |
 | Company/payroll profile readiness | 3/5 | onboarding/profile commands | CompanyPayrollProfileVersion | optional verification | DB,A,E2E,AX | Partial/legal validation |

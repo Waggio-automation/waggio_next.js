@@ -14,7 +14,7 @@
 | Migration | fresh install and production-clone upgrade | Masked snapshot, counts/sums/hashes, rollback/restore |
 | Operational | build, health, backup restore, alerting, deploy/rollback | Staging/canary runbooks |
 
-n8n retirement additionally requires contract tests for each N8N-01 through N8N-07 replacement, shadow comparisons that suppress duplicate provider/email effects, negative tests proving no global shared-secret access, zero-caller/execution observation evidence, and post-revocation compatibility monitoring.
+Historical n8n retirement additionally requires negative tests proving the removed header grants no access, tenant/DTO tests for retained routes, employee/payroll regression tests proving no workflow request occurs, AUTO-01 through AUTO-03 contract tests when direct replacements are built, zero-caller/execution observation evidence, and post-revocation monitoring.
 
 ## Financial command matrix
 

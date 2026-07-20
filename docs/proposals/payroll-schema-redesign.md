@@ -120,7 +120,7 @@ PaystubRun                          PaytransferRun
 | `payrollRun relation` | `paystubRun` + `paytransferRun` relation 으로 교체 |
 |  |  |
 
-n8n → railway 
+n8n → railway (historical proposal only; n8n application integration was removed 2026-07-17 and this is not the target runtime)
 
 `[Vercel / Local - Next.js]
   HTML 생성 (템플릿 로직)

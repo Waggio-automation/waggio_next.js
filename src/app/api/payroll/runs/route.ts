@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
+import { requirePayrollApiAuth } from "@/lib/payroll-api-auth";
 
 const VALID_PAYROLL_RUN_STATUSES = [
   "SCHEDULED",
@@ -21,13 +21,8 @@ function serializeBigInt<T>(value: T): T {
 }
 
 export async function GET(req: NextRequest) {
-  const n8nSecret = process.env.N8N_SECRET;
-  const providedSecret = req.headers.get("x-n8n-secret");
-  const isN8nRequest = Boolean(n8nSecret) && providedSecret === n8nSecret;
-
-  const companyId = isN8nRequest
-    ? null
-    : (await requireCompanyAdminOrRedirect()).id;
+  const auth = await requirePayrollApiAuth();
+  if (!auth.ok) return auth.response;
 
   const status = req.nextUrl.searchParams.get("status");
 
@@ -37,29 +32,31 @@ export async function GET(req: NextRequest) {
 
   const data = await prisma.payrollRun.findMany({
     where: {
-      ...(companyId === null ? {} : { companyId }),
+      companyId: auth.company.id,
       ...(status ? { status: status as (typeof VALID_PAYROLL_RUN_STATUSES)[number] } : {}),
     },
-    include: {
-      company: {
-        select: {
-          adminEmail: true,
-        },
-      },
+    select: {
+      id: true,
+      payDate: true,
+      sendAt: true,
+      status: true,
+      failureType: true,
+      createdAt: true,
+      updatedAt: true,
       payHistory: {
-        include: {
+        select: {
+          id: true,
+          employeeId: true,
+          payDate: true,
+          grossPay: true,
+          netPay: true,
+          status: true,
           employee: {
             select: {
               id: true,
               firstName: true,
               lastName: true,
-              email: true,
               employeeNumber: true,
-              department: true,
-              jobTitle: true,
-              transitBranchNumber: true,
-              accountNumber: true,
-              hourlyRate: true,
             },
           },
         },

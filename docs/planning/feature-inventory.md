@@ -64,7 +64,7 @@ Multiple classifications may apply.
 | --- | --- | --- |
 | Paystub HTML/template in current repo | Missing | No checked-in primary-flow template was found. |
 | Paystub PDF proxy | Implemented but defective; unsafe | Open arbitrary-HTML rendering, no ownership check/limits/timeout, public predictable blob. |
-| Paystub generation orchestration | Partially implemented; unknown external caller | Legacy n8n interfaces suggest an external workflow; no in-repo end-to-end implementation. Approved target is a direct PostgreSQL job/worker flow with stateless Railway conversion. |
+| Paystub generation orchestration | Missing direct implementation; explicit temporary gap | Historical n8n interfaces were removed on 2026-07-17; any former external outcome is unknown. Approved target is a direct PostgreSQL job/worker flow with stateless Railway conversion. |
 | Paystub storage metadata | Partially implemented | Only `pdfUrl` exists; no hash/version/attempt/storage ownership. |
 | Paystub email delivery | Missing in repo | SMTP code sends only auth emails; status columns can be patched externally. |
 | PDF/email retries and attempts | Missing | Flat status/provider fields only. |

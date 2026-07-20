@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { calculatePayrollAmounts } from "@/lib/payroll/calculatePayroll";
-import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
+import { requirePayrollApiAuth } from "@/lib/payroll-api-auth";
 import { sendPayrollRunToTrolley } from "@/lib/payments/trolley-payroll";
 
 const itemSchema = z.object({
@@ -25,8 +25,9 @@ const runSchema = z.object({
 
 export async function POST(req: Request) {
   try {
-    const company = await requireCompanyAdminOrRedirect();
-    if (!company.currentPlan) {
+    const auth = await requirePayrollApiAuth();
+    if (!auth.ok) return auth.response;
+    if (!auth.company.currentPlan) {
       return NextResponse.json(
         { error: "Choose a plan before creating paystubs." },
         { status: 402 }
@@ -52,7 +53,7 @@ export async function POST(req: Request) {
       const employeeCount = await tx.employee.count({
         where: {
           id: { in: employeeIds },
-          companyId: company.id,
+          companyId: auth.company.id,
         },
       });
       if (employeeCount !== employeeIds.length) {
@@ -61,7 +62,7 @@ export async function POST(req: Request) {
 
       const createdRun = await tx.payrollRun.create({
         data: {
-          companyId: company.id,
+          companyId: auth.company.id,
           payDate: new Date(payDate),
           sendAt: new Date(sendAt),
           status: "SCHEDULED" ,
@@ -78,7 +79,7 @@ export async function POST(req: Request) {
       for (const it of items) {
         const empIdBig = BigInt(it.employeeId);
         const emp = await tx.employee.findUnique({
-          where: { id: empIdBig, companyId: company.id },
+          where: { id: empIdBig, companyId: auth.company.id },
           select: {
             id: true,
             payType: true,
@@ -139,31 +140,6 @@ export async function POST(req: Request) {
 
       return createdRun;
     });
-// N8N_TEST_WEBHOOK_URL이 있으면 테스트 URL, 없으면 프로덕션 URL 사용
-    const webhookUrl = process.env.N8N_TEST_WEBHOOK_URL ?? process.env.N8N_WEBHOOK_URL;
-    if (webhookUrl) {
-      try {
-        const webhookRes = await fetch(webhookUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            payrollRunId: payrollRun.id.toString(),
-            event: "PAYROLL_PROCESSED",
-          }),
-          cache: "no-store",
-        });
-
-        if (!webhookRes.ok) {
-          const webhookBody = await webhookRes.text().catch(() => "");
-          console.error("n8n payroll webhook returned non-OK", {
-            status: webhookRes.status,
-            body: webhookBody,
-          });
-        }
-      } catch (webhookError) {
-        console.error("Failed to trigger n8n payroll webhook", webhookError);
-      }
-    }
 
     let trolleyResult: { sent: boolean; batchId?: string; error?: string } = { sent: false };
     const sendAtDate = new Date(sendAt);

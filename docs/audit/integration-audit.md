@@ -8,7 +8,7 @@
 | Trolley | Signed REST recipient/account/batch/payment calls | No webhook route/event store/polling; limited duplicate payment reuse | Money-moving path unsafe |
 | Stripe | SDK checkout/portal/subscription/invoice items | Signature verified webhook; no event ledger/dedup; callback binding defect | Partial |
 | SMTP | Nodemailer for reset/login reminder | No delivery event/attempt; no paystub email | Partial auth only |
-| n8n | Outbound webhook + global shared-secret reads/patches | External workflow absent from repo | Approved removal; seven executable touchpoints and replacements are inventoried in `n8n-usage-audit.md` |
+| n8n (historical) | Removed 2026-07-17: outbound requests and global shared-secret reads/patches | External workflow definitions remain outside repository and require manual retirement | No executable application integration remains; temporary gaps and operations are inventoried in `n8n-usage-audit.md` |
 | Railway PDF | POST caller HTML + API key | No service code/config/health/timeout/retry; result public blob | Critical exposure |
 | Vercel Blob | `put` public payslip URL | No ownership proxy, lifecycle, version/hash | Unsafe for pay statements |
 | Local Chromium/filesystem | CRA/T4 synchronous PDF and local path | No durable store; delete/recreate | Not serverless-safe |

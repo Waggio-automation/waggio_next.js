@@ -44,7 +44,7 @@ No `loading.tsx`, `error.tsx`, route-level `not-found.tsx`, skeleton, or error b
 | `/api/company/*` | Setup/readiness | Legacy takeover route; readiness is environment presence, not verified funding/KYB |
 | `/api/employees*` | Employee create/payout | API create stores plaintext SIN; provider errors exposed too directly |
 | `/api/payroll/run` | Payroll creation | Ignores idempotency, no approval/finalize confirmation |
-| `/api/payroll/runs*`, `/api/payhistory` | Legacy run/status integration | Duplicate lifecycles and global n8n shared-secret access; replacement/retirement is specified in `n8n-usage-audit.md` |
+| `/api/payroll/runs*`, `/api/payhistory` | Legacy run/status integration retained for authenticated users | Historical global shared-secret access was removed on 2026-07-17. Routes now enforce OWNER/ADMIN tenant scope and allowlisted DTOs; duplicate lifecycle debt remains. |
 | `/api/payroll/send-due`, cron | Transfer start/retry | No claim/lock; retry safety unknown |
 | `/api/payslip/pdf` | Paystub PDF | Unauthenticated arbitrary HTML/public result |
 | `/api/documents/[id]` | CRA downloads | Correct tenant check, but source file may be gone on serverless instance |

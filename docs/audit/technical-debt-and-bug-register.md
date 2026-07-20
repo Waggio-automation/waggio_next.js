@@ -14,7 +14,7 @@ Severity: Critical can cause account compromise, PII disclosure, money/tax error
 | BUG-008 | High | Status enums conflate calculation/payment/PDF/email; unrestricted jumps | schema/APIs | Separate state machines and commands |
 | BUG-009 | High | No complete immutable payroll snapshot/finalization | schema/run route | Payroll aggregate/result revisions with DB immutability |
 | BUG-010 | High | No Trolley webhook/event/reconciliation; runs stuck PAYING | repository absence | Verified event inbox + polling reconcile |
-| BUG-011 | High | Global n8n secret exposes all tenants and bank data | payroll runs/payhistory APIs | Contain, replace with tenant commands/direct worker reads, then retire n8n after zero callers |
+| BUG-011 | High | Historical global workflow secret exposed all tenants and bank data | payroll runs/payhistory APIs | **Application path fixed 2026-07-17:** bypass removed, tenant auth and minimal DTOs added. Complete external workflow/credential retirement checklist. |
 | BUG-012 | High | Plaintext full bank values stored and redisplayed | Employee/UI/schema | Tokenize/minimize/mask/step-up/audit |
 | BUG-013 | High | Calculation lacks YTD max, CPP2, bonus, high-income case | calculation comments | Block unsupported; verified versioned engine |
 | BUG-014 | High | Contractors receive employee deductions but T4 says exempt | calculation/T4 | Explicit worker classification policy/legal validation |
@@ -33,7 +33,7 @@ Severity: Critical can cause account compromise, PII disclosure, money/tax error
 | BUG-027 | Medium | Remittance same-day equal payments collapse | CRA payment function | Idempotency key/reference ledger |
 | BUG-028 | Medium | Company settings may adopt arbitrary orphan record | company-settings service | Explicit migration/quarantine, no runtime adoption |
 | BUG-029 | Medium | Billing extra-run sequence race and swallowed sync failures | Stripe/employee action | Usage ledger, worker/retry/alert |
-| BUG-030 | Medium | No provider/API fetch timeouts | Trolley/PDF/legacy n8n | Abort budgets, circuit breaker, ambiguous outcome handling; n8n calls are temporary until retired |
+| BUG-030 | Medium | No provider/API fetch timeouts | Trolley/PDF | Abort budgets, circuit breaker, ambiguous outcome handling. Historical workflow calls were removed on 2026-07-17. |
 | BUG-031 | Medium | README/metadata/package/docs are boilerplate | root files | Document runtime/config/runbooks after design approval |
 | BUG-032 | Medium | No route error/loading states and inconsistent accessibility | app UI | Shared accessible primitives/error boundaries |
 | BUG-033 | Medium | Dark theme tokens conflict with hardcoded light components; Geist overridden | globals/layout | Tokenized single supported theme first |
