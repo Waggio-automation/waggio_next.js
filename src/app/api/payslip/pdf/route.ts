@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { put } from "@vercel/blob";
+import { prisma } from "@/lib/prisma";
+import { getAuthenticatedCompanyUser } from "@/lib/company-auth";
 
 export const runtime = "nodejs";
 
@@ -10,6 +12,12 @@ type PdfRequestBody = {
 
 export async function POST(req: Request) {
   try {
+    // Only an authenticated company admin may generate paystub PDFs.
+    const session = await getAuthenticatedCompanyUser();
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = (await req.json()) as PdfRequestBody;
     const html = typeof body?.html === "string" ? body.html : "";
     const payHistoryId =
@@ -23,6 +31,18 @@ export async function POST(req: Request) {
 
     if (payHistoryId == null) {
       return NextResponse.json({ error: "Missing or invalid payHistoryId" }, { status: 400 });
+    }
+
+    // Ownership check: the paystub must belong to the authenticated company.
+    const payHistory = await prisma.payHistory.findUnique({
+      where: { id: BigInt(payHistoryId) },
+      select: { employee: { select: { companyId: true } } },
+    });
+    if (!payHistory) {
+      return NextResponse.json({ error: "Paystub not found" }, { status: 404 });
+    }
+    if (payHistory.employee.companyId !== session.company.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     // Express PDF 서버 호출 (Railway 등에 배포된 서버)
