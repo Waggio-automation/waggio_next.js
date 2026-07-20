@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calculatePayrollAmounts } from "@/lib/payroll/calculatePayroll";
 import { z } from "zod";
-import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
+import { requirePayrollApiAuth } from "@/lib/payroll-api-auth";
 
 const itemSchema = z.object({
   employeeId: z.string().min(1),       // stringified BIGINT
@@ -28,13 +28,8 @@ function serializeBigInt<T>(value: T): T {
 }
 
 export async function GET(req: NextRequest) {
-  const n8nSecret = process.env.N8N_SECRET;
-  const providedSecret = req.headers.get("x-n8n-secret");
-  const isN8nRequest = Boolean(n8nSecret) && providedSecret === n8nSecret;
-
-  const companyId = isN8nRequest
-    ? null
-    : (await requireCompanyAdminOrRedirect()).id;
+  const auth = await requirePayrollApiAuth();
+  if (!auth.ok) return auth.response;
 
   const payrollRunId = req.nextUrl.searchParams.get("payrollRunId");
   if (!payrollRunId) {
@@ -48,20 +43,57 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Invalid payrollRunId" }, { status: 400 });
   }
 
+  const payrollRun = await prisma.payrollRun.findFirst({
+    where: { id: payrollRunIdBigInt, companyId: auth.company.id },
+    select: { id: true },
+  });
+  if (!payrollRun) {
+    return NextResponse.json({ error: "Payroll run not found" }, { status: 404 });
+  }
+
   const data = await prisma.payHistory.findMany({
     where: {
       payrollRunId: payrollRunIdBigInt,
-      ...(companyId === null ? {} : { employee: { companyId } }),
+      employee: { companyId: auth.company.id },
     },
-    include: { employee: true },
+    select: {
+      id: true,
+      employeeId: true,
+      payrollRunId: true,
+      payDate: true,
+      periodStart: true,
+      periodEnd: true,
+      hoursWorked: true,
+      grossPay: true,
+      ded_cpp: true,
+      ded_ei: true,
+      ded_income_tax: true,
+      ded_eht: true,
+      ded_wsib: true,
+      netPay: true,
+      status: true,
+      paidAt: true,
+      createdAt: true,
+      updatedAt: true,
+      employee: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          employeeNumber: true,
+        },
+      },
+    },
+    orderBy: { id: "asc" },
   });
 
   return NextResponse.json(serializeBigInt(data));
 }
 
 export async function POST(req: NextRequest) {
-  const company = await requireCompanyAdminOrRedirect();
-  if (!company.currentPlan) {
+  const auth = await requirePayrollApiAuth();
+  if (!auth.ok) return auth.response;
+  if (!auth.company.currentPlan) {
     return NextResponse.json(
       { error: "Choose a plan before creating pay history." },
       { status: 402 }
@@ -82,7 +114,7 @@ export async function POST(req: NextRequest) {
     for (const it of items) {
       const empIdBig = BigInt(it.employeeId); // 문자열 → BIGINT
       const emp = await tx.employee.findUnique({
-        where: { id: empIdBig, companyId: company.id },
+        where: { id: empIdBig, companyId: auth.company.id },
         select: {
           id: true,
           payType: true,
@@ -147,20 +179,13 @@ const statusPatchSchema = z.object({
 });
 
 export async function PATCH(req: NextRequest) {
-  const n8nSecret = process.env.N8N_SECRET;
-  const providedSecret = req.headers.get("x-n8n-secret");
-  const isN8nRequest = Boolean(n8nSecret) && providedSecret === n8nSecret;
-
-  let companyId: bigint | null = null;
-  if (!isN8nRequest) {
-    const company = await requireCompanyAdminOrRedirect();
-    if (!company.currentPlan) {
-      return NextResponse.json(
-        { error: "Choose a plan before updating pay history." },
-        { status: 402 }
-      );
-    }
-    companyId = company.id;
+  const auth = await requirePayrollApiAuth();
+  if (!auth.ok) return auth.response;
+  if (!auth.company.currentPlan) {
+    return NextResponse.json(
+      { error: "Choose a plan before updating pay history." },
+      { status: 402 }
+    );
   }
 
   const json = await req.json();
@@ -179,6 +204,17 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: `Invalid PayHistory id: ${String(value)}` }, { status: 400 });
     }
   }
+  const uniqueIds = [...new Set(idList)];
+
+  const ownedRows = await prisma.payHistory.count({
+    where: {
+      id: { in: uniqueIds },
+      employee: { companyId: auth.company.id },
+    },
+  });
+  if (ownedRows !== uniqueIds.length) {
+    return NextResponse.json({ error: "Pay history not found" }, { status: 404 });
+  }
 
   const updateData = {
     status,
@@ -192,11 +228,10 @@ export async function PATCH(req: NextRequest) {
   const updated = await prisma.payHistory.updateMany({
     where: {
       id: { in: idList },
-      ...(companyId === null ? {} : { employee: { companyId } }),
+      employee: { companyId: auth.company.id },
     },
     data: updateData,
   });
 
   return NextResponse.json({ ok: true, updated: updated.count });
 }
-  

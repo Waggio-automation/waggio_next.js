@@ -6,7 +6,7 @@ This audit covers commit `75ec1e96e809d3274c55f3ba5a0993590043300e` and the work
 
 ## What the application currently is
 
-Waggio is one Next.js 15 App Router application with React 18, Prisma/PostgreSQL, server actions, route handlers, and Tailwind 4. It provides employer workspace authentication, company/plan settings, employee records, a limited Ontario payroll calculator, scheduled Trolley payout submission, Stripe subscriptions, CRA remittance summaries, T4 package generation, and document downloads. “Paystub generation and delivery” is not end-to-end in this tree: an open proxy calls an external PDF service and legacy n8n endpoints can patch PDF/email status, but the primary payroll path does not invoke either.
+Waggio is one Next.js 15 App Router application with React 18, Prisma/PostgreSQL, server actions, route handlers, and Tailwind 4. It provides employer workspace authentication, company/plan settings, employee records, a limited Ontario payroll calculator, scheduled Trolley payout submission, Stripe subscriptions, CRA remittance summaries, T4 package generation, and document downloads. “Paystub generation and delivery” is not end-to-end in this tree: an open proxy calls an external PDF service, while the historical n8n hooks were removed on 2026-07-17 and the primary payroll path does not invoke statement generation or delivery.
 
 ## Repository map
 
@@ -32,7 +32,7 @@ Employer browser
      -> Trolley REST API
      -> Stripe API/webhooks
      -> SMTP (auth email only)
-     -> legacy n8n webhooks/shared-secret APIs (approved for replacement/retirement)
+     -> no n8n runtime (historical hooks/shared-secret bypasses removed 2026-07-17)
      -> Railway-like PDF endpoint -> public Vercel Blob
      -> local Chromium + local filesystem for CRA/T4 artifacts
 

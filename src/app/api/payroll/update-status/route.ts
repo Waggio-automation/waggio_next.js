@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { PayHistoryStatus, Prisma } from "@prisma/client";
-import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
+import { requirePayrollApiAuth } from "@/lib/payroll-api-auth";
 
 type ScheduleBody = {
   employeeIds: (string | number)[];
@@ -34,32 +34,11 @@ async function safeJson<T = unknown>(req: Request): Promise<T> {
   }
 }
 
-function toIsoAtLocalTime(date: string, time: string, tz: string) {
-  const [Y, M, D] = date.split("-").map(Number);
-  const [h, m] = time.split(":").map(Number);
-
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(new Date(Date.UTC(Y, M - 1, D, h, m)));
-
-  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
-  const assumedUtc = new Date(
-    Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"))
-  );
-
-  return assumedUtc.toISOString();
-}
-
 export async function POST(req: Request) {
   try {
-    const company = await requireCompanyAdminOrRedirect();
-    if (!company.currentPlan) {
+    const auth = await requirePayrollApiAuth();
+    if (!auth.ok) return auth.response;
+    if (!auth.company.currentPlan) {
       return NextResponse.json(
         { error: "Choose a plan before updating payroll." },
         { status: 402 }
@@ -85,89 +64,18 @@ export async function POST(req: Request) {
       const { sendAt, ...scheduleMeta } = schedule;
       const payrollRun = await prisma.payrollRun.create({
         data: {
-          companyId: company.id,
+          companyId: auth.company.id,
           payDate: new Date(schedule.payDate),
           sendAt: sendAt ? new Date(sendAt) : null,
           status: "SCHEDULED",
           meta: scheduleMeta as Prisma.InputJsonValue,
         },
       });
-// // N8N_TEST_WEBHOOK_URL이 있으면 테스트 URL, 없으면 프로덕션 URL 사용
-      const url =
-        process.env.N8N_PAYROLL_WEBHOOK_URL ??
-        process.env.N8N_TEST_WEBHOOK_URL ??
-        process.env.N8N_WEBHOOK_URL;
-      if (!url) {
-        return NextResponse.json({
-          ok: true,
-          stage: "scheduled",
-          payrollRunId: payrollRun.id.toString(),
-        });
-      }
-
-      const tz = schedule.timezone ?? "America/Toronto";
-      const sendAtIso = !schedule.sendAt
-        ? toIsoAtLocalTime(schedule.payDate, "09:00", tz)
-        : /^\d{4}-\d{2}-\d{2}$/.test(String(schedule.sendAt))
-          ? toIsoAtLocalTime(String(schedule.sendAt), "09:00", tz)
-          : new Date(String(schedule.sendAt)).toISOString();
-
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (process.env.N8N_API_KEY) {
-        headers["X-API-Key"] = process.env.N8N_API_KEY;
-      }
-
-      const payload = {
-        ...schedule,
-        employeeIds: schedule.employeeIds.map((id) => String(id)),
-        payrollRunId: payrollRun.id.toString(),
-        sendAtIso,
-        source: "waggio-next/payroll",
-      };
-
-      const res = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-        cache: "no-store",
-      });
-
-      const text = await res.text().catch(() => "");
-      let data: Record<string, unknown> = {};
-      try {
-        data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
-      } catch {
-        data = { raw: text };
-      }
-
-      if (!res.ok) {
-        await prisma.payrollRun.update({
-          where: { id: payrollRun.id },
-          data: {
-            status: "FAILED",
-            failureType: "FUNDING",
-            failureReason:
-              (typeof data.error === "string" ? data.error : null) ??
-              `Funding request failed (${res.status})`,
-          },
-        });
-
-        return NextResponse.json(
-          { ok: false, stage: "schedule", status: res.status, error: data },
-          { status: 502 }
-        );
-      }
-
-      await prisma.payrollRun.update({
-        where: { id: payrollRun.id },
-        data: { status: "FUNDING" },
-      });
 
       return NextResponse.json({
         ok: true,
-        stage: "funding",
+        stage: "scheduled",
         payrollRunId: payrollRun.id.toString(),
-        n8n: data,
       });
     }
 
@@ -187,7 +95,7 @@ export async function POST(req: Request) {
     await prisma.payHistory.updateMany({
       where: {
         id: { in: validIds },
-        employee: { companyId: company.id },
+        employee: { companyId: auth.company.id },
       },
       data: { status: nextStatus },
     });

@@ -33,7 +33,7 @@ The system is not production-safe for payroll in its current state. Tenant scopi
 | H-01 | The browser sends an `Idempotency-Key` when creating a payroll run, but the server ignores it and the schema has no equivalent uniqueness constraint. | Double-clicks, retries, and network replay can create duplicate runs and duplicate employee liabilities. |
 | H-02 | `PayHistoryStatus` mixes calculation, PDF, email, and payment states; `PayrollRunStatus` mixes calculation and money movement. Mutating APIs validate membership, not allowed transitions. | Impossible states and overwrites are accepted; ownership of state is unclear. |
 | H-03 | `PayHistory` is an incomplete snapshot. It lacks rate/pay-type/TD1/vacation/overtime/holiday/formula-version/employer-liability snapshots. | A stored amount cannot be independently explained or reproduced after employee/config/code changes. |
-| H-04 | Bank coordinates are stored in plaintext and returned by payroll-run integration endpoints. One shared `N8N_SECRET` grants unscoped access across all tenants. | Excess PII exposure and a large blast radius for one credential. |
+| H-04 | Historical finding, fixed in affected APIs on 2026-07-17: payroll-run integration endpoints returned plaintext bank coordinates and `N8N_SECRET` granted unscoped tenant access. | The bypass and sensitive DTO fields are removed; plaintext storage/display elsewhere remains a separate High risk. |
 | H-05 | The calculation converts Prisma decimals to JavaScript numbers and rounds with binary floating point. Money columns are `DECIMAL(65,30)` without domain precision constraints. | Rounding drift and inconsistent reproducibility for payroll/tax values. |
 | H-06 | The calculation explicitly omits YTD CPP/EI max-out, CPP2, bonus/commission rules, and high-income BPA phase-out. It does not use employment type, so contractors receive employee deductions. | Materially incorrect payroll for supported-looking cases. |
 | H-07 | `ded_eht` and `ded_wsib` are subtracted from employee net pay, although current code sets both to zero. | If populated, employer levies may incorrectly reduce employee pay. Classification requires authoritative Ontario verification before implementation. |
@@ -58,7 +58,7 @@ The system is not production-safe for payroll in its current state. Tenant scopi
 | Email | Nodemailer SMTP | Only login reminder and password reset exist in this repository. There is no paystub email sender. |
 | Billing | Stripe SDK, Checkout, portal, webhook, invoice items | Partially implemented; no event ledger/deduplication and race-prone extra-run metering. |
 | Jobs | Vercel daily GET cron at 13:00 UTC | Authenticated with `CRON_SECRET`, but no distributed claim/lock or retry queue. |
-| n8n | Outbound employee/payroll webhooks and shared-secret global read/update APIs | Removal is approved. Current occurrences remain unsafe and must be replaced/retired under `../audit/n8n-usage-audit.md`; external caller ownership is still unknown. |
+| n8n (historical) | Outbound employee/payroll requests and shared-secret global APIs were removed on 2026-07-17 | No executable application integration remains. External caller/workflow ownership and operational retirement remain under `../audit/n8n-usage-audit.md`. |
 
 ## Current data model and preservation
 
@@ -80,16 +80,16 @@ Preservation is especially weak:
 1. An authenticated owner/admin enters period dates, pay date, delivery date, hours, overtime, holiday hours, and vacation inclusion in `hours-table.tsx`.
 2. Client and server both call the same calculation function, but only shallow server validation is applied; negative values and invalid date relationships are accepted by the API.
 3. `/api/payroll/run` creates `PayrollRun(SCHEDULED)` and one `PayHistory` per employee in one database transaction. It then immediately sets the run to `PROCESSED`; positive-net rows become `READY`.
-4. Outside the transaction, an optional n8n event is sent. If `sendAt` is already due, the request directly submits the run to Trolley.
+4. Outside the transaction, no generic workflow event is sent after the 2026-07-17 removal. If `sendAt` is already due, the request directly submits the run to Trolley.
 5. Otherwise the Vercel cron or a manual/retry route finds `PROCESSED` due runs and submits them.
 6. Trolley batch and payments are created, batch processing starts, and only then a database transaction records `providerRef`, run `PAYING`, and line `SENDING`.
 7. No current code receives Trolley webhooks or polls/reconciles provider status. No code sets new-flow runs to `PAID`, lines to paid, or `paidAt`.
 
-There are two additional legacy/duplicate creation flows: `POST /api/payhistory` creates standalone rows without a run, and `POST /api/payroll/update-status` can create a run without calculation rows and hand it to n8n. These can generate records that do not follow the primary lifecycle.
+There are two additional legacy/duplicate creation flows: `POST /api/payhistory` creates standalone rows without a run, and `POST /api/payroll/update-status` can create a schedule-only run without calculation rows. The latter's historical external call was removed on 2026-07-17, so it now stops at local `SCHEDULED` state. These paths can generate records that do not follow the primary lifecycle.
 
 ## Paystub generation and delivery
 
-The UI says “Create Paystub & Save,” but the primary route only creates calculation rows and schedules Trolley payment. The repository contains no server-side template invocation from that flow and no paystub email sender. Legacy n8n-compatible endpoints can read payroll rows and patch `pdfUrl`/email fields, so actual delivery may exist through an **unknown external caller**. The target replaces it with direct statement-generation and delivery workers; n8n removal is approved but code retirement waits for the replacement and zero-caller evidence.
+The UI says “Create Paystub & Save,” but the primary route only creates calculation rows and schedules Trolley payment. The repository contains no server-side template invocation from that flow and no paystub email sender. The historical n8n-compatible access was removed on 2026-07-17; retained routes require tenant authentication, and no external statement/delivery call occurs. Any former delivery remains an **unknown external outcome** and explicit AUTO-02 gap. The target uses direct statement-generation and delivery workers.
 
 PDF metadata is only a URL on `PayHistory`; it has no content hash, byte size, template/calculation version, storage key, generation attempt, retention class, or supersession link. Blob access is explicitly public. Two sample paystubs are tracked under `src/public/payslips`; other local paystub files are ignored.
 
@@ -126,7 +126,7 @@ Material gaps:
 - the legacy magic-link endpoint bypasses email possession;
 - `CompanyUserRole` is never enforced, so `ADMIN` has owner-equivalent powers;
 - global unique user email prevents a person from belonging to multiple companies and is not a membership model;
-- N8N authorization is a single shared secret and deliberately removes company scoping;
+- the historical N8N shared-secret authorization bypass was removed on 2026-07-17; retained PayHistory/PayrollRun routes now require OWNER/ADMIN tenant sessions, but broader centralized authorization remains incomplete;
 - nullable `companyId`, indirect tenant keys, and lack of composite foreign keys allow inconsistent cross-tenant relationships;
 - `getOrCreateCompanySettings` may assign the first orphan settings record to whichever company calls next;
 - no centralized tenant-scoped data-access API makes an omitted filter difficult to detect;

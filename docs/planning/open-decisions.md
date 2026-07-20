@@ -4,7 +4,7 @@ Resolved on 2026-07-16: the schema draft is available and reconciled; n8n has no
 
 ## Blocking implementation approvals
 
-1. **Production exposure and caller inventory:** identify owners/use for the admin-link, PDF, n8n compatibility routes/workflows, Trolley dispatch, public blobs and local environment credentials. Approve the containment observation window and credential rotation/revocation process.
+1. **Production exposure and caller inventory:** identify owners/use for the admin-link, PDF, removed n8n compatibility callers/hosted workflows, Trolley dispatch, public blobs and local/deployed environment credentials. Approve the containment observation window and credential rotation/revocation process. Application hooks were removed on 2026-07-17; external retirement remains open.
 2. **Production data and recovery:** approve environment inventory access, encrypted backup/object snapshot, masked restore rehearsal, RPO/RTO, reconciliation owners and quarantine handling before DDL/backfill.
 3. **Payroll product boundary:** approve launch province(s), tax years, schedules, worker classifications, earnings/deductions/benefits, partial periods, YTD/opening balances and explicit unsupported blockers.
 4. **Authoritative sources/reviewers:** name payroll, legal, privacy and security approvers and source/version process for CRA, Ontario, CPP2, EHT, WSIB, pay statements, retention and year-end claims.
@@ -25,7 +25,7 @@ Resolved on 2026-07-16: the schema draft is available and reconciled; n8n has no
 - Overpayment collection and returned-payment customer support policy.
 - Billing plans, included-run truth, grace/past-due/refund/cancellation policy.
 - Support JIT access, customer visibility and dual-control repair policy.
-- Observation period length required for zero n8n callers/executions before credential/workflow/code removal.
+- Observation period length required for zero historical n8n callers/executions before credential/workflow retirement. Application code removal is already complete.
 
 ## Recommended defaults pending approval
 

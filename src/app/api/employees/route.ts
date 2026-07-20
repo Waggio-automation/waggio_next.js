@@ -20,7 +20,7 @@ export async function GET() {
   return NextResponse.json(safe);
 }
 
-// POST: 생성 (외부 시스템—for example n8n—에서 호출)
+// POST: authenticated company employee creation
 export async function POST(req: NextRequest) {
   try {
     const company = await requireCompanyAdminOrRedirect();

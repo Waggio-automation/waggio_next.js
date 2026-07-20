@@ -18,7 +18,7 @@ Browser / provider webhook / approved cron
   -> private object storage owned by Waggio
 ```
 
-n8n has no target role. The exhaustive replacement and retirement gates are in `../audit/n8n-usage-audit.md`.
+n8n has no target role. Its application hooks were removed on 2026-07-17; temporary automation gaps and external retirement gates are recorded in `../audit/n8n-usage-audit.md`.
 
 Railway has no database or object-storage credentials. It cannot retrieve employee/payroll data, receive or infer tenant identity, send email, call Trolley, calculate payroll or tax, or retain payroll documents. Waggio sends bounded server-rendered HTML under short-lived service authentication; Railway returns bytes; Waggio validates MIME/magic/size/hash and stores privately.
 
@@ -211,8 +211,8 @@ Remittance uses exact finalized, non-voided result/component revisions plus adju
 
 Migration is additive, rehearsed, tenant-batched and reversible at the read/write-routing layer. Never edit applied migrations, drop/rename first, infer legal truth, or compensate provider side effects with database rollback.
 
-1. Contain critical endpoints and rotate exposed credentials; inventory backups, production shapes, public blobs, n8n callers/workflows and provider records.
-2. Implement n8n replacements and retire only after shadow comparison and zero-caller gates; legacy data remains untouched.
+1. Contain critical endpoints and rotate exposed credentials; inventory backups, production shapes, public blobs, callers/hosted workflows left after the n8n application removal, and provider records.
+2. Implement direct replacements for the explicit automation gaps and complete hosted n8n/configuration retirement after comparison and zero-required-caller gates; legacy data remains untouched and removed global access is never restored.
 3. Add identity/tenant/retention/PII foundations and non-null-capable ownership columns/tables. Backfill verified company relations; quarantine ambiguity.
 4. Add target payroll/payment/statement/reliability models and indexes without removing legacy columns/tables. Backfill deterministic source mappings and completeness flags by tenant/key range.
 5. Dual-write through one command service, shadow-read and reconcile counts, sums, hashes, statuses, external IDs and artifacts. Provider reconciliation is required before terminal payment mapping.

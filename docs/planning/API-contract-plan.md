@@ -44,4 +44,4 @@
 
 ## Legacy migration
 
-Inventory callers for `/api/payhistory`, `/api/payroll/update-status`, `/api/payroll/export`, global n8n endpoints, `/api/company/admin-link`, and `/api/payslip/pdf`. n8n removal is approved, but active/legacy code remains until every outcome in `../audit/n8n-usage-audit.md` has a verified replacement. Add telemetry and a narrowly allowlisted temporary adapter only where containment cannot immediately deny access; prevent new callers; verify zero use; revoke credentials; retire. No replacement service receives global tenant access.
+Inventory callers for `/api/payhistory`, `/api/payroll/update-status`, `/api/payroll/export`, `/api/company/admin-link`, and `/api/payslip/pdf`. Historical n8n application hooks and global-secret access were removed on 2026-07-17; do not add a compatibility bypass. Observe denied legacy callers, verify required outcomes, disable hosted workflows, and retire credentials/configuration using `../audit/n8n-usage-audit.md`. No replacement service receives global tenant access.

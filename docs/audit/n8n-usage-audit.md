@@ -1,76 +1,85 @@
-# n8n usage audit and approved disposition
+# Historical n8n usage audit and removal record
 
-Audit date: 2026-07-16. The target architecture decision is final: Waggio will not use n8n. This document inventories repository evidence; it does not assert whether an externally hosted workflow is currently enabled. No n8n code, configuration, or workflow was changed during this design phase.
+Audit date: 2026-07-16. Removal implementation: 2026-07-17.
 
-## Classification rules
+The architecture decision is final: Waggio does not use n8n. This document is retained as historical evidence of the removed integration and as the operational checklist for retiring configuration and externally hosted workflows. It does not prove whether a deployed workflow is enabled; that requires environment and provider-console access.
 
-- **Active**: executable production-path code when its environment variable is configured.
-- **Legacy but reachable**: a callable compatibility path that is not part of the preferred product journey.
-- **Dead code**: cannot be reached from any route, action, schedule, or import found in this repository.
-- **Documentation only**: comment, migration annotation, or design text with no executable effect.
-- **Unknown external caller**: caller ownership and deployed use cannot be established from this repository. This is a caller qualification layered onto the executable classification, not evidence of safety.
+## Removed executable paths
 
-## Executable inventory and replacement map
-
-| ID | Location / occurrence | Classification | Current data/action | Caller knowledge | Required replacement |
-| --- | --- | --- | --- | --- | --- |
-| N8N-01 | `src/app/employees/actions.ts` employee-created outbound webhook using `N8N_TEST_WEBHOOK_URL` or `N8N_WEBHOOK_URL` and optional `N8N_WEBHOOK_SECRET` | Active when configured | Sends employee ID/email/pay type/group after create | Unknown external recipient; configured URL is evidence of possible use, not ownership | The employee command remains synchronous in a Next.js server action. Its transaction writes `AuditEvent` and any required `OutboxEvent` such as billing-seat reconciliation or payout-setup work. Authenticated workers call Stripe/Trolley directly. No generic employee event leaves Waggio. |
-| N8N-02 | `src/app/api/payroll/run/route.ts` payroll-processed outbound webhook | Active when configured | Sends run ID, dates, employee line IDs and scheduled time after creation | Unknown external recipient | Payroll finalization writes `payroll.finalized` to the PostgreSQL outbox. Separate jobs create payment instructions, statement-generation intents, compliance projections, and billing usage. Workers consume those jobs directly. Draft creation emits no external side effect. |
-| N8N-03 | `src/app/api/payroll/update-status/route.ts` schedule-only run creation and outbound webhook, with optional `N8N_API_KEY` | Legacy but reachable | Creates a run without authoritative calculation rows, then asks n8n to process it | Unknown external caller and recipient | Replace with named draft/calculate/approve/finalize commands. Scheduled downstream work is a PostgreSQL job with `scheduledAt`; approved cron only wakes authenticated workers to claim due jobs. Retire the route after caller telemetry reaches zero. |
-| N8N-04 | `GET /api/payhistory` shared-secret bypass | Legacy but reachable | A valid global secret removes tenant scoping and returns payroll/employee data | Unknown external caller | Employer queries use authenticated, tenant-scoped Next.js handlers with allowlisted DTOs. Workers query tenant-owned records directly through the domain/data boundary; they do not call a global HTTP read API. |
-| N8N-05 | `PATCH /api/payhistory` shared-secret bypass | Legacy but reachable | Globally patches generic status, PDF/email fields, provider reference, payment date, and failure text | Unknown external caller | Remove arbitrary status mutation. Statement generation, artifact completion, delivery attempts, provider events, and payment reconciliation each use authenticated worker commands and their own transition table, idempotency key, attempts, and audit record. |
-| N8N-06 | `GET /api/payroll/runs` shared-secret bypass | Legacy but reachable | Removes company filter and returns runs, employee rows, and payout/bank-related data | Unknown external caller | Authenticated employer query with tenant scope and minimal DTO. Payment/statement workers read claimed records directly from PostgreSQL; no bank coordinates appear in payroll DTOs. |
-| N8N-07 | `GET /api/payroll/runs/[id]` shared-secret bypass | Legacy but reachable | Removes company filter for a specific run and exposes the same integration payload | Unknown external caller | Same replacement as N8N-06; stable internal job/resource IDs are resolved only inside a tenant-scoped worker transaction. |
-
-No executable occurrence qualifies as proven dead code. Treating a configured or public route as dead without deployed telemetry would be unsafe.
-
-## Environment and documentation inventory
-
-| Occurrence | Classification | Disposition |
+| ID | Removed path | Result after removal |
 | --- | --- | --- |
-| `.env` contains active/test n8n URL and credential entries | Active configuration dependency; deployed use unknown | The credential material must be treated as exposed to the local repository workspace and rotated during Critical containment. Do not remove names until replacements are live and callers are zero. Remove `N8N_SECRET`, `N8N_API_KEY`, `N8N_WEBHOOK_URL`, `N8N_TEST_WEBHOOK_URL`, `N8N_PAYROLL_WEBHOOK_URL`, and `N8N_WEBHOOK_SECRET` from every approved environment/configuration surface during retirement. Never copy values into documentation or logs. |
-| `src/app/api/employees/route.ts` comment describing n8n as an example external caller | Documentation only | Remove with route documentation cleanup after the replacement contract exists. |
-| `src/prisma/migrations/20250924194456_init/migration.sql` n8n-flow annotation | Documentation only, immutable migration history | Do not edit an applied migration. Record the historical context here. |
-| `docs/proposals/payroll-schema-redesign.md` n8n-to-Railway diagram | Documentation only, draft input | Superseded by the direct worker design. Preserve the proposal as review evidence. |
-| Existing audit/planning references | Documentation only | Updated to describe the approved removal and link to this inventory. |
+| N8N-01 | Employee-created outbound request in `src/app/employees/actions.ts` | Employee creation, validation, SIN encryption, tenant ownership, Stripe seat sync, optional direct Trolley payout setup, revalidation, and UI success remain. No generic employee-created event leaves Waggio. |
+| N8N-02 | Payroll-processed outbound request in `src/app/api/payroll/run/route.ts` | The payroll database transaction and existing direct due-now Trolley call remain. Payroll creation no longer makes a workflow request or depends on workflow configuration. |
+| N8N-03 | Schedule-only outbound request in `src/app/api/payroll/update-status/route.ts` | Authenticated schedule-only creation still returns a `SCHEDULED` run. It no longer contacts an external workflow or advances the run to `FUNDING`. |
+| N8N-04 | Shared-secret bypass in `GET /api/payhistory` | OWNER/ADMIN session required; the run and rows must belong to the authenticated company. The response is an allowlisted payroll DTO. |
+| N8N-05 | Shared-secret bypass in `PATCH /api/payhistory` | OWNER/ADMIN session and plan required. Every requested row must resolve inside the authenticated company or the request returns 404 without mutation. |
+| N8N-06 | Shared-secret bypass in `GET /api/payroll/runs` | OWNER/ADMIN session required; query is company-scoped and returns an allowlisted DTO. |
+| N8N-07 | Shared-secret bypass in `GET /api/payroll/runs/[id]` | OWNER/ADMIN session required; another tenant's identifier returns 404 and sensitive employee/banking fields are not selected. |
 
-## Negative findings by requested area
+The former header by itself grants no access. The affected API routes return JSON 401/403/404 responses and do not invoke page redirects for authentication.
 
-| Area | Repository finding |
-| --- | --- |
-| UI | No direct n8n URL, SDK, or browser request. Employee and payroll UI invoke server paths that can indirectly emit N8N-01/N8N-02. |
-| Scheduled workflows | `vercel.json` calls the authenticated payroll due-send cron directly; no n8n scheduler reference. The cron is still concurrency-unsafe and must become a job dispatcher. |
-| Payroll processing | N8N-02/N8N-03 are the only direct references. Authoritative calculation currently remains in Waggio. |
-| Paystub generation | No in-repo end-to-end caller. N8N-04/N8N-05 make an external paystub workflow plausible but unverified. |
-| Email delivery | No paystub mailer and no direct n8n call in SMTP code. `emailSentAt` and email statuses can be patched through N8N-05, so the external caller remains unknown. |
-| Trolley | No n8n reference in Trolley services. Legacy n8n payloads expose fields used around payout setup, but Trolley calls are direct. |
-| CRA/remittance | No n8n reference. Target scheduled reminder/compliance work uses PostgreSQL jobs and direct providers. |
-| Deployment configuration | No checked-in n8n service, image, workflow, or cron. Environment entries are the only discovered configuration dependency. |
+## Caller inventory
 
-## Approved target replacements
+| Surface | In-repository caller | Preserved behavior / gap |
+| --- | --- | --- |
+| Employee server action | `src/app/employees/CreateEmployeeForm.tsx` | Creation remains operational; only the unknown external employee event is gone. |
+| Primary payroll creation | `src/app/payroll/hours-table.tsx` | Database creation and direct due-now Trolley behavior remain; any unknown external paystub/delivery orchestration is no longer triggered. |
+| PayHistory GET/PATCH | None found | Authenticated route retained for legitimate Waggio users; unknown external shared-secret callers now receive 401. |
+| PayrollRun collection/detail | No direct caller found | Authenticated route retained; unknown external shared-secret callers now receive 401. |
+| Schedule-only update route | None found | It creates only local `SCHEDULED` state; no downstream processing is triggered. |
 
-```text
-Browser
-  -> authenticated Next.js route handler/server action
-  -> transaction: domain state + idempotency + audit + outbox/job
-  -> authenticated durable worker claims PostgreSQL job with lease
-     -> Trolley / Stripe / email provider directly
-     -> Railway renderer only for bounded HTML-to-PDF conversion
-  <- provider webhook -> verified ProviderEvent inbox -> idempotent processor
-Approved cron -> authenticated dispatcher/reconciler -> claims due PostgreSQL jobs
-```
+There was no direct browser workflow URL or SDK, no checked-in workflow definition/service/image, and no workflow scheduler in `vercel.json`. The checked-in cron invokes Waggio's payroll due-send route directly.
 
-Railway is a stateless authenticated HTML-to-PDF converter. It must not access PostgreSQL; retrieve employee or payroll data; receive or infer `companyId`/tenant identity; send email; call Trolley; calculate payroll/tax; upload to or own document storage; or retain input/output. Waggio renders server-owned HTML, validates the returned PDF, and stores it privately.
+## Sensitive-data reduction
 
-## Retirement gates
+The retained PayHistory and PayrollRun read routes use explicit Prisma `select` allowlists. They do not return SIN, institution number, transit/branch number, account number, employee email, compensation rate/salary, provider reference, tokens, encrypted values, company admin email, or the unrestricted employee model. The detail route filters by both resource ID and authenticated company ID, returning 404 for missing or cross-tenant runs.
 
-1. Contain global reads/writes immediately without deleting them: rotate credentials, add redacted caller/correlation telemetry, narrow allowlists where emergency compatibility is required, and stop new caller onboarding.
-2. Inventory deployed n8n workflows, executions, credentials, schedules, webhook URLs, owners, and data retention outside this repository. Export definitions and logs for controlled audit storage without importing secrets into git.
-3. Implement and verify N8N-01 through N8N-07 replacements, including durable retries, idempotency, tenant checks, attempts, provider inbox/outbox, audit, and reconciliation.
-4. Shadow each replacement and compare counts, tenant ownership, totals, artifacts, delivery outcomes, and provider external IDs. Never duplicate a real external side effect during shadowing.
-5. Stop outbound calls one workflow at a time behind reversible flags. Keep legacy inbound routes read-only or deny-by-default during a measured observation window.
-6. Require zero successful legacy calls and zero n8n executions for an approved observation period, plus owner sign-off and recovery evidence.
-7. Disable n8n schedules/workflows and revoke n8n credentials. Continue monitoring compatibility endpoints before code removal.
-8. Remove the routes/branches and environment names only in a separately approved implementation change. Preserve applied migration comments and audit evidence. Delete hosted workflows/account data according to the approved retention policy.
+## Temporary feature gaps and follow-up cards
 
-Removal is not complete merely because code is deleted. It is complete when all active outcomes are owned by Waggio, external callers are zero, credentials are revoked, hosted schedules are disabled, retained data is handled, and operational evidence is signed off.
+These gaps are explicit and are not silently replaced in this change:
+
+- **AUTO-01 — employee post-create outcomes:** determine whether the removed external employee event performed any required action. Implement only required outcomes later through an audited transaction plus Job/Outbox and authenticated direct provider workers.
+- **AUTO-02 — payroll statement/delivery outcomes:** primary payroll creation no longer triggers an unknown external workflow. Paystub generation and delivery remain missing in this repository. Implement them in the future Job/Outbox statement and delivery phase.
+- **AUTO-03 — schedule-only route disposition:** identify deployed callers. Either retire the incomplete route or replace it with approved payroll commands and PostgreSQL-backed scheduled jobs; do not restore an external workflow.
+- **OPS-01 — hosted workflow retirement:** inventory, disable, retain/delete according to policy, and obtain owner evidence for employee-created, payroll-processed, schedule-only, and any PayHistory read/patch workflow.
+- **OPS-02 — configuration retirement:** remove the sanitized variable names below from every deployed environment after code deployment and verification.
+
+## Configuration inventory
+
+No environment example is checked in, so this document is the authoritative sanitized inventory. The repository search found no checked-in application, CI/CD, or `vercel.json` dependency after removal. A developer-local ignored environment file may still contain some names; its values were not changed and must not be copied into tickets or logs.
+
+Sanitized name-only inspection found these names in an ignored developer-local environment file; no values were changed:
+
+- `N8N_SECRET`
+- `N8N_API_KEY`
+- `N8N_WEBHOOK_URL`
+- `N8N_PAYROLL_WEBHOOK_URL`
+
+These additional removed code dependencies were not present in the inspected developer-local name inventory, but may exist only in Vercel or another deployment and must be checked manually:
+
+- `N8N_TEST_WEBHOOK_URL`
+- `N8N_WEBHOOK_SECRET`
+
+All six names require manual retirement wherever present: Vercel Development/Preview/Production, CI/CD secret stores, other hosting, and developer environments. The repository cannot establish which names exist only in a deployment dashboard. Verify names without displaying values.
+
+## Historical references intentionally retained
+
+- `src/prisma/migrations/20250924194456_init/migration.sql` contains a comment describing the historical flow. Applied migration history is immutable and the comment has no executable effect.
+- `docs/proposals/payroll-schema-redesign.md` is a superseded proposal retained as review evidence. Its diagram is historical, not the target or current runtime.
+- Planning and audit documents may use the product name only to record the rejected architecture, completed removal, follow-up gap, or external retirement task. They must not describe it as current executable behavior.
+
+## Verification and deployment order
+
+1. Run the focused authorization/DTO regression test, repository search, type check, lint, and production build without calling providers.
+2. Deploy application code before deleting any environment names. Confirm employee and payroll database creation in a safe environment and confirm no outbound workflow request appears.
+3. Confirm the legacy header alone receives 401 and authenticated cross-tenant identifiers receive 404. Confirm read DTOs contain no restricted fields.
+4. Observe application and hosted workflow logs for callers/executions for the approved period. Do not log headers, URLs, or secret values.
+5. Disable external schedules/workflows for employee creation, payroll processing, schedule-only processing, and PayHistory read/patch. Preserve required audit evidence according to retention policy.
+6. Remove the six variable names from Vercel Development, Preview, and Production; CI/CD; other hosting; and developer environments. Rotate/revoke credentials under the separate approved security procedure.
+7. Re-deploy/restart if the platform requires it, repeat smoke checks, and monitor for 401s, missing statements/delivery, schedule-only runs, and provider/payment anomalies.
+
+## Rollback limitation
+
+Do not restore a global shared-secret bypass or outbound workflow call. A rollback can restore the preceding application artifact only if security owners explicitly accept that exposure, so the preferred recovery is to fix the authenticated application path or pause the affected automation. External workflow disablement, secret revocation, data deletion, and real provider side effects are not database-roll-backable; record each operation and preserve recovery evidence.
+
+Code removal is complete. Operational retirement is complete only after external workflows are disabled, environment names are removed, credentials are handled under the approved security procedure, and owners sign off on the temporary automation gaps.

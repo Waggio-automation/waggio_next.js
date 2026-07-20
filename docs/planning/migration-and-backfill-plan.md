@@ -5,7 +5,7 @@ No migration is authorized by this document. The draft proposal has been reviewe
 ## Non-negotiable safeguards
 
 1. Freeze approved logical names/invariants before DDL. Never edit an applied migration or begin with a drop/rename.
-2. Inventory every environment: Prisma migration state; row counts; null/orphan/cross-tenant relations; enum/status distributions; duplicate periods; provider refs/events; artifact reachability; SIN formats; money/component totals; dates/timezones; n8n callers/workflows.
+2. Inventory every environment: Prisma migration state; row counts; null/orphan/cross-tenant relations; enum/status distributions; duplicate periods; provider refs/events; artifact reachability; SIN formats; money/component totals; dates/timezones; and callers/hosted workflows left behind by the removed n8n integration.
 3. Take encrypted database/object backups and restore into an isolated masked rehearsal. Record restore checksum, time, RPO/RTO and responsible approvers.
 4. Add new tables, nullable ownership/mapping columns and indexes first. Use measured low-lock/concurrent PostgreSQL techniques; validate constraints after cleanup.
 5. Backfill by tenant and stable primary-key ranges with deterministic IDs and resumable checkpoints. Quarantine ambiguity; never guess tenant, approval, paid/final status, SIN format or provider outcome.
@@ -34,11 +34,11 @@ No migration is authorized by this document. The draft proposal has been reviewe
 
 ### Stage 0 — Critical containment and evidence
 
-Contain admin-link, arbitrary/public PDF, global shared-secret reads/writes, unsafe SIN writes, destructive lifecycle actions and blind Trolley retry. Rotate exposed credentials as required. Add redacted caller/correlation evidence only through separately approved containment changes. Prove backup/restore. No schema redesign.
+Contain admin-link, arbitrary/public PDF, unsafe SIN writes, destructive lifecycle actions and blind Trolley retry. Historical global shared-secret reads/writes were removed on 2026-07-17; preserve that boundary. Rotate exposed credentials as required. Add redacted caller/correlation evidence only through separately approved containment changes. Prove backup/restore. No schema redesign.
 
-### Stage 1 — n8n replacement and safe retirement
+### Stage 1 — Direct automation and historical n8n operational retirement
 
-Implement the direct command/job/worker/provider replacements in `../audit/n8n-usage-audit.md`. Shadow outcomes without duplicate side effects, stop outbound workflows one at a time, prove zero legacy calls/executions, revoke credentials, disable hosted workflows, then separately remove code/config. Do not wait for the full schema redesign where a minimal durable compatibility foundation safely unblocks retirement; any temporary table is additive and aligned to final job/outbox/idempotency/audit semantics.
+Application calls and bypasses were removed on 2026-07-17 without implementing new schema. Implement AUTO-01 through AUTO-03 from `../audit/n8n-usage-audit.md` with direct commands/jobs/workers/providers. Shadow outcomes without duplicate side effects, prove zero required legacy callers/executions, disable hosted workflows, and retire credentials/configuration through the manual checklist. Do not restore the removed compatibility access. Any future table is additive and aligned to final job/outbox/idempotency/audit semantics.
 
 ### Stage 2 — Identity, tenant, retention and PII foundation
 
