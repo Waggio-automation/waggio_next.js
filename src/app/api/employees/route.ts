@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { employeeInputSchema } from "@/app/employees/validators";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
+import { encryptSin } from "@/lib/crypto";
 
 // GET: 목록 (민감정보 제외)
 export async function GET() {
@@ -34,11 +35,16 @@ export async function POST(req: NextRequest) {
     // if (req.headers.get("x-api-key") !== process.env.API_KEY) return NextResponse.json({error:"unauthorized"}, {status:401});
 
     const body = await req.json();
-    const parsed = employeeInputSchema.parse(body);
+    const result = employeeInputSchema.safeParse(body);
+    if (!result.success) {
+      return NextResponse.json({ error: "Invalid employee payload" }, { status: 400 });
+    }
+    const parsed = result.data;
 
     const created = await prisma.employee.create({
       data: {
         ...parsed,
+        sin: encryptSin(parsed.sin),
         paymentMethod: "DIRECT_DEPOSIT",
         dentalBenefitsCoverage: parsed.dentalBenefitsCoverage,
         addrLine2: parsed.addrLine2 || null,
@@ -56,10 +62,7 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ ok:true, id: created.id.toString() }, { status: 201 });
-  } catch (e: unknown) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Invalid payload" },
-      { status: 400 }
-    );
+  } catch {
+    return NextResponse.json({ error: "Unable to create employee" }, { status: 400 });
   }
 }

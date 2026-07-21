@@ -1,5 +1,4 @@
 import { createHmac } from "node:crypto";
-import { inspect } from "node:util";
 
 const DEFAULT_TROLLEY_BASE_URL = "https://api.trolley.com";
 const API_VERSION_PREFIX = "/v1";
@@ -161,13 +160,21 @@ export interface CreatePaymentInput {
 export interface Payment {
   id: string;
   batchId?: string;
+  batch?: { id?: string; [key: string]: unknown };
   recipientId?: string;
   recipientAccountId?: string;
   amount?: string;
+  sourceAmount?: string;
   currency?: CurrencyCode;
+  sourceCurrency?: CurrencyCode;
   status?: string;
   externalId?: string;
+  metadata?: Record<string, string>;
   description?: string;
+  processedAt?: string | null;
+  returnedAt?: string | null;
+  returnedReason?: unknown[];
+  failureMessage?: string | null;
   createdAt?: string;
   updatedAt?: string;
   [key: string]: unknown;
@@ -193,11 +200,14 @@ export interface TrolleyPaginatedResponse<TItem> {
 type QueryValue = string | number | boolean | undefined;
 type QueryParams = Record<string, QueryValue>;
 
+export const DEFAULT_TROLLEY_REQUEST_TIMEOUT_MS = 5_000;
+
 interface TrolleyClientOptions {
   accessKey?: string;
   secretKey?: string;
   baseUrl?: string;
   fetchImpl?: typeof fetch;
+  requestTimeoutMs?: number;
 }
 
 export class TrolleyApiError extends Error {
@@ -205,6 +215,7 @@ export class TrolleyApiError extends Error {
   readonly code?: string;
   readonly details?: unknown;
   readonly requestId?: string | null;
+  readonly retryAfterMs?: number;
 
   constructor(params: {
     message: string;
@@ -212,6 +223,7 @@ export class TrolleyApiError extends Error {
     code?: string;
     details?: unknown;
     requestId?: string | null;
+    retryAfterMs?: number;
   }) {
     super(params.message);
     this.name = "TrolleyApiError";
@@ -219,6 +231,18 @@ export class TrolleyApiError extends Error {
     this.code = params.code;
     this.details = params.details;
     this.requestId = params.requestId;
+    this.retryAfterMs = params.retryAfterMs;
+  }
+}
+
+export class TrolleyRequestTimeoutError extends Error {
+  readonly code = "TROLLEY_PROVIDER_REQUEST_TIMEOUT";
+  readonly timeoutMs: number;
+
+  constructor(timeoutMs: number) {
+    super("Trolley provider request timed out.");
+    this.name = "TrolleyRequestTimeoutError";
+    this.timeoutMs = timeoutMs;
   }
 }
 
@@ -385,64 +409,17 @@ function extractResource<T>(payload: unknown, keys: string[]): T {
   return payload as T;
 }
 
-function summarizeForLog(payload: unknown) {
-  if (!payload || typeof payload !== "object") {
-    return payload;
-  }
-
-  const record = payload as Record<string, unknown>;
-  const nested =
-    (typeof record.recipient === "object" && record.recipient) ||
-    (typeof record.account === "object" && record.account) ||
-    (typeof record.recipientAccount === "object" && record.recipientAccount) ||
-    (typeof record.batch === "object" && record.batch) ||
-    (typeof record.payment === "object" && record.payment) ||
-    (typeof record.data === "object" && record.data) ||
-    record;
-
-  if (!nested || typeof nested !== "object") {
-    return payload;
-  }
-
-  const next = nested as Record<string, unknown>;
-
-  return {
-    id: typeof next.id === "string" ? next.id : undefined,
-    status: typeof next.status === "string" ? next.status : undefined,
-    type: typeof next.type === "string" ? next.type : undefined,
-    message:
-      typeof record.message === "string"
-        ? record.message
-        : typeof record.error === "string"
-          ? record.error
-          : typeof next.message === "string"
-            ? next.message
-            : undefined,
-    errors: Array.isArray(record.errors) ? record.errors : undefined,
-    raw: "raw" in record ? record.raw : undefined,
-    recipientId:
-      typeof next.recipientId === "string"
-        ? next.recipientId
-        : typeof next.recipient === "string"
-          ? next.recipient
-          : undefined,
-    batchId:
-      typeof next.batchId === "string"
-        ? next.batchId
-        : typeof next.batch === "string"
-          ? next.batch
-          : undefined,
-    paymentId:
-      typeof next.paymentId === "string"
-        ? next.paymentId
-        : typeof next.payment === "string"
-          ? next.payment
-          : undefined,
-  };
+function parseRetryAfterMs(value: string | null, nowMs = Date.now()) {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1_000);
+  const instant = Date.parse(value);
+  if (!Number.isFinite(instant)) return undefined;
+  return Math.max(0, instant - nowMs);
 }
 
-function logTrolleyResponse(label: string, payload: Record<string, unknown>) {
-  console.log(`[trolley] ${label} ${inspect(payload, { depth: 10, colors: false, compact: false })}`);
+function logTrolleyResponse(label: string, payload: { method: HttpMethod; status: number }) {
+  console.log(`[trolley] ${label}`, payload);
 }
 
 export class TrolleyClient {
@@ -450,12 +427,14 @@ export class TrolleyClient {
   private readonly secretKey: string;
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly requestTimeoutMs: number;
 
   constructor(options: TrolleyClientOptions = {}) {
     this.accessKey = options.accessKey ?? getEnvOrThrow("TROLLEY_ACCESS_KEY");
     this.secretKey = options.secretKey ?? getEnvOrThrow("TROLLEY_SECRET_KEY");
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.requestTimeoutMs = Math.max(1, options.requestTimeoutMs ?? DEFAULT_TROLLEY_REQUEST_TIMEOUT_MS);
   }
 
   private createSignature(timestamp: string, method: HttpMethod, requestPath: string, body: string) {
@@ -469,28 +448,34 @@ export class TrolleyClient {
     path: string;
     query?: QueryParams;
     body?: TBody;
+    timeoutMs?: number;
   }): Promise<TResponse> {
     const requestPath = `${API_VERSION_PREFIX}${params.path}${buildQueryString(params.query)}`;
     const body = params.body ? JSON.stringify(params.body) : "";
     const timestamp = Math.floor(Date.now() / 1000).toString();
     const signature = this.createSignature(timestamp, params.method, requestPath, body);
+    const timeoutMs = Math.max(1, params.timeoutMs ?? this.requestTimeoutMs);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-    const response = await this.fetchImpl(`${this.baseUrl}${requestPath}`, {
-      method: params.method,
-      headers: {
-        Authorization: `prsign ${this.accessKey}:${signature}`,
-        "X-PR-Timestamp": timestamp,
-        "Content-Type": "application/json",
-      },
-      body: body || undefined,
-      cache: "no-store",
-    });
+    try {
+      const response = await this.fetchImpl(`${this.baseUrl}${requestPath}`, {
+        method: params.method,
+        headers: {
+          Authorization: `prsign ${this.accessKey}:${signature}`,
+          "X-PR-Timestamp": timestamp,
+          "Content-Type": "application/json",
+        },
+        body: body || undefined,
+        cache: "no-store",
+        signal: controller.signal,
+      });
 
-    const requestId = response.headers.get("x-request-id");
-    const text = await response.text();
-    const data = text.length > 0 ? safeJsonParse(text) : null;
+      const requestId = response.headers.get("x-request-id");
+      const text = await response.text();
+      const data = text.length > 0 ? safeJsonParse(text) : null;
 
-    if (!response.ok) {
+      if (!response.ok) {
       const errorPayload =
         data && typeof data === "object" ? (data as Record<string, unknown>) : undefined;
 
@@ -501,10 +486,7 @@ export class TrolleyClient {
 
       logTrolleyResponse("error response", {
         method: params.method,
-        path: requestPath,
         status: response.status,
-        requestId,
-        body: summarizeForLog(data),
       });
 
       const extractedCode =
@@ -527,24 +509,30 @@ export class TrolleyClient {
                 ? errorPayload.raw
                 : `Trolley API request failed with status ${response.status}`;
 
-      throw new TrolleyApiError({
+        throw new TrolleyApiError({
+          status: response.status,
+          requestId,
+          code: extractedCode,
+          message: extractedMessage,
+          details: data,
+          retryAfterMs: parseRetryAfterMs(response.headers.get("retry-after")),
+        });
+      }
+
+      logTrolleyResponse("response", {
+        method: params.method,
         status: response.status,
-        requestId,
-        code: extractedCode,
-        message: extractedMessage,
-        details: data,
       });
+
+      return data as TResponse;
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new TrolleyRequestTimeoutError(timeoutMs);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
     }
-
-    logTrolleyResponse("response", {
-      method: params.method,
-      path: requestPath,
-      status: response.status,
-      requestId,
-      body: summarizeForLog(data),
-    });
-
-    return data as TResponse;
   }
 
   async createRecipient(input: CreateRecipientInput): Promise<Recipient> {
@@ -660,7 +648,7 @@ export class TrolleyClient {
 
   async listBatchPayments(
     batchId: string,
-    params: { search?: string; page?: number; pageSize?: number } = {}
+    params: { search?: string; page?: number; pageSize?: number; timeoutMs?: number } = {}
   ): Promise<TrolleyPaginatedResponse<Payment>> {
     const response = await this.signedRequest<unknown>({
       method: "GET",
@@ -670,6 +658,7 @@ export class TrolleyClient {
         pageSize: params.pageSize,
         search: params.search,
       },
+      timeoutMs: params.timeoutMs,
     });
 
     const payload = (response ?? {}) as Record<string, unknown>;
@@ -765,7 +754,7 @@ export const createPayment = (batchId: string, input: CreatePaymentInput) =>
 
 export const listBatchPayments = (
   batchId: string,
-  params?: { search?: string; page?: number; pageSize?: number }
+  params?: { search?: string; page?: number; pageSize?: number; timeoutMs?: number }
 ) => getTrolleyClient().listBatchPayments(batchId, params);
 
 export const listPayments = (params?: {

@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { isValidSin } from "@/lib/sin";
+import { utcDateOnlySchema } from "@/lib/validation/date-only";
 
 export const EmploymentType = z.enum(["FULL_TIME","PART_TIME","CONTRACTOR"]);
 export const PayGroup = z.enum(["BI_WEEKLY","MONTHLY"]);
@@ -25,17 +27,7 @@ export const employeeInputSchema = z.object({
   email    : z.string().email(),
   sin      : z.string()
     .regex(/^\d{9}$/, "SIN must be 9 digits")
-    .refine((sin) => {
-      const digits = sin.split("").map(Number);
-      const sum = digits.reduce((acc, digit, i) => {
-        if (i % 2 === 1) {
-          const doubled = digit * 2;
-          return acc + (doubled > 9 ? doubled - 9 : doubled);
-        }
-        return acc + digit;
-      }, 0);
-      return sum % 10 === 0;
-    }, "SIN is invalid (fails Luhn check)"),
+    .refine(isValidSin, "SIN is invalid (fails checksum validation)"),
 
   employeeNumber: z.string().optional(),
   department: z.string().optional(),
@@ -49,9 +41,9 @@ export const employeeInputSchema = z.object({
   addrPostal: z.string().min(1),
   addrCountry: z.string().default("CA"),
 
-  birthDate: z.string().transform((s)=> new Date(s)),
+  birthDate: utcDateOnlySchema,
   employmentType: EmploymentType,
-  hireDate: z.string().transform((s)=> new Date(s)),
+  hireDate: utcDateOnlySchema,
   payGroup: PayGroup.default("BI_WEEKLY"),
 
   payType: PayType,

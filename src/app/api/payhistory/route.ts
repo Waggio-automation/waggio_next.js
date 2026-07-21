@@ -3,9 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { calculatePayrollAmounts } from "@/lib/payroll/calculatePayroll";
 import { z } from "zod";
 import { requirePayrollApiAuth } from "@/lib/payroll-api-auth";
+import { utcDateOnlySchema } from "@/lib/validation/date-only";
 
 const itemSchema = z.object({
-  employeeId: z.string().min(1),       // stringified BIGINT
+  employeeId: z.string().regex(/^\d+$/),       // stringified BIGINT
   hoursWorked: z.number().nullable(),  // null for SALARY
   overtime: z.number().default(0),
   holidayHours: z.number().default(0),
@@ -13,10 +14,17 @@ const itemSchema = z.object({
 });
 
 const payloadSchema = z.object({
-  periodStart: z.string().min(1),
-  periodEnd: z.string().min(1),
-  payDate: z.string().min(1),
+  periodStart: utcDateOnlySchema,
+  periodEnd: utcDateOnlySchema,
+  payDate: utcDateOnlySchema,
   items: z.array(itemSchema).min(1),
+}).superRefine((data, ctx) => {
+  if (data.periodStart > data.periodEnd) {
+    ctx.addIssue({ code: "custom", path: ["periodEnd"], message: "Invalid payroll period" });
+  }
+  if (new Set(data.items.map((item) => item.employeeId)).size !== data.items.length) {
+    ctx.addIssue({ code: "custom", path: ["items"], message: "Employee IDs must be unique" });
+  }
 });
 
 function serializeBigInt<T>(value: T): T {
@@ -99,34 +107,42 @@ export async function POST(req: NextRequest) {
       { status: 402 }
     );
   }
-  const json = await req.json();
+  const json = await req.json().catch(() => null);
+  if (!json) {
+    return NextResponse.json({ error: "Validation failed" }, { status: 400 });
+  }
   const parsed = payloadSchema.safeParse(json);
   if (!parsed.success) {
-    return NextResponse.json({ error: "Validation failed", issues: parsed.error.issues }, { status: 400 });
+    return NextResponse.json({ error: "Validation failed" }, { status: 400 });
   }
 
   // 멱등 키로 중복 방지하고 싶다면 여기에 로직 추가 가능 (예: 별도 테이블)
-  const { payDate, items } = parsed.data;
+  const { payDate, periodStart, periodEnd, items } = parsed.data;
+  const employeeIds = items.map((item) => BigInt(item.employeeId));
+  const employees = await prisma.employee.findMany({
+    where: { id: { in: employeeIds }, companyId: auth.company.id },
+    select: {
+      id: true,
+      payType: true,
+      hourlyRate: true,
+      salary: true,
+      payGroup: true,
+      vacationPay: true,
+      federalTD1: true,
+      provincialTD1: true,
+    },
+  });
+  if (employees.length !== employeeIds.length) {
+    return NextResponse.json({ error: "Validation failed" }, { status: 400 });
+  }
+  const employeesById = new Map(employees.map((employee) => [employee.id.toString(), employee]));
 
   let createdCount = 0;
 
   await prisma.$transaction(async (tx) => {
     for (const it of items) {
-      const empIdBig = BigInt(it.employeeId); // 문자열 → BIGINT
-      const emp = await tx.employee.findUnique({
-        where: { id: empIdBig, companyId: auth.company.id },
-        select: {
-          id: true,
-          payType: true,
-          hourlyRate: true,
-          salary: true,
-          payGroup: true,
-          vacationPay: true,
-          federalTD1: true,
-          provincialTD1: true,
-        },
-      });
-      if (!emp) throw new Error(`Unknown employee: ${it.employeeId}`);
+      const emp = employeesById.get(it.employeeId);
+      if (!emp) throw new Error("PAYROLL_INPUT_CHANGED_BEFORE_COMMIT");
 
       const amounts = calculatePayrollAmounts({
         payType: emp.payType,
@@ -145,7 +161,9 @@ export async function POST(req: NextRequest) {
       await tx.payHistory.create({
         data: {
           employeeId: emp.id,
-          payDate: new Date(payDate),
+          payDate,
+          periodStart,
+          periodEnd,
           hoursWorked: emp.payType === "HOURLY" ? Number(it.hoursWorked ?? 0) : null,
           grossPay: amounts.grossPay,
           ded_cpp: amounts.ded_cpp,

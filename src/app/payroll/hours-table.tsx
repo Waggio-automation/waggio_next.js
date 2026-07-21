@@ -9,6 +9,12 @@ import {
 } from "@/lib/ontarioHolidays";
 import PlanRequiredButton from "@/app/components/PlanRequiredButton";
 import { calculatePayrollAmounts } from "@/lib/payroll/calculatePayroll";
+import {
+  addUtcDateOnlyDays,
+  formatUtcDateOnly,
+  parseUtcDateOnly,
+  serializeUtcDateOnly,
+} from "@/lib/date-only";
 
 type EmployeeRow = {
   id: string;
@@ -38,30 +44,26 @@ type RowState = {
 const r2 = (n: number) => Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
 
 function fmtDate(d: Date) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const da = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${da}`;
+  return serializeUtcDateOnly(d);
 }
 
 function parseYmd(s: string) {
   if (!s) return undefined;
-  const [y, m, d] = s.split("-").map(Number);
-  return new Date(y, m - 1, d);
+  return parseUtcDateOnly(s);
 }
 
 function isBusinessDay(date: Date) {
-  const day = date.getDay();
+  const day = date.getUTCDay();
   if (day === 0 || day === 6) return false;
   return !getOntarioHolidayForYmd(fmtDate(date));
 }
 
 function subtractBusinessDays(date: Date, businessDays: number) {
-  const result = new Date(date);
+  let result = new Date(date);
   let remaining = businessDays;
 
   while (remaining > 0) {
-    result.setDate(result.getDate() - 1);
+    result = addUtcDateOnlyDays(result, -1);
     if (isBusinessDay(result)) {
       remaining -= 1;
     }
@@ -661,7 +663,7 @@ export default function HoursTable({
                 {periodHolidays.map((h) => (
                   <li key={`${h.id}-${h.date.toISOString()}`}>
                     {h.name} (
-                    {h.date.toLocaleDateString("en-CA", {
+                    {formatUtcDateOnly(h.date, {
                       year: "numeric",
                       month: "short",
                       day: "numeric",

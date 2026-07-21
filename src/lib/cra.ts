@@ -1,5 +1,6 @@
 import { promises as fs } from "fs";
 import path from "path";
+import { createHash, randomUUID } from "node:crypto";
 import puppeteer from "puppeteer";
 import type { Browser } from "puppeteer";
 import {
@@ -15,15 +16,91 @@ import {
   renderEmployerT4SummaryHtml,
   type T4SlipData,
   type T4SummaryData,
-} from "@/lib/t4-filing";
-import { prisma } from "@/lib/prisma";
+} from "./t4-filing.ts";
+import { prisma } from "./prisma.ts";
+import {
+  compliancePayrollWhere,
+  createComplianceSourceMembershipFingerprint,
+  partitionCompliancePayrollRows,
+} from "./payroll/compliance-eligibility.ts";
+import { getProviderVerificationCutoff } from "./payroll/provider-evidence-policy.ts";
+import {
+  CompliancePublicationLockTimeoutError,
+  lockCompanyComplianceScope,
+} from "./payroll/compliance-publication-lock.ts";
+import { resolveSinForT4, type T4SinFailureReason } from "./sin.ts";
+import {
+  addUtcDateOnlyDays,
+  compareUtcDateOnly,
+  createUtcDateOnly,
+  getDateOnlyParts,
+  getTodayUtcDateOnly,
+  getUtcDateOnlyYearRange,
+  normalizeUtcDateOnly,
+  serializeUtcDateOnly,
+} from "./date-only.ts";
+import {
+  getCompanyProviderVerificationFreshness,
+  getProviderVerificationBlockedScope,
+} from "./payments/provider-verification.ts";
 
-const CPP_RATE = 0.0595;
-const EI_RATE = 0.0166;
+const T4_GENERATION_VERSION = "t4-secure-v2";
+const REMITTANCE_GENERATION_VERSION = "remittance-eligible-v3";
+const REMITTANCE_SOURCE_VERSION = "remittance-source-v1";
 
-const GENERATED_DIR = path.join(process.cwd(), "generated", "cra");
+const GENERATED_DIR = path.resolve(
+  process.env.CRA_GENERATED_DIR ?? path.join(process.cwd(), "generated", "cra")
+);
 
 const ZERO = new Prisma.Decimal(0);
+
+const COMPLIANCE_PAYROLL_RUN_SELECT = {
+  status: true,
+  companyId: true,
+  providerRef: true,
+  providerVerificationStatus: true,
+  providerVerificationLastSucceededAt: true,
+  providerEvidenceVersion: true,
+} satisfies Prisma.PayrollRunSelect;
+
+function sameBigIntIds(left: bigint[], right: bigint[]) {
+  if (left.length !== right.length) return false;
+  const orderedLeft = [...left].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const orderedRight = [...right].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return orderedLeft.every((value, index) => value === orderedRight[index]);
+}
+
+function createT4ComplianceSourceFingerprint(rows: Array<{
+  id: bigint;
+  payrollRunId: bigint | null;
+  employeeId: bigint;
+  payDate: Date;
+  updatedAt: Date;
+  grossPay: Prisma.Decimal;
+  ded_cpp: Prisma.Decimal;
+  ded_ei: Prisma.Decimal;
+  ded_income_tax: Prisma.Decimal;
+}>) {
+  return createHash("sha256").update(JSON.stringify(
+    [...rows]
+      .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
+      .map((row) => ({
+        payHistoryId: row.id.toString(),
+        payrollRunId: row.payrollRunId?.toString() ?? null,
+        employeeId: row.employeeId.toString(),
+        payDate: row.payDate.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+        grossPay: row.grossPay.toFixed(2),
+        cpp: row.ded_cpp.toFixed(2),
+        ei: row.ded_ei.toFixed(2),
+        incomeTax: row.ded_income_tax.toFixed(2),
+      }))
+  )).digest("hex");
+}
+
+export function getCraGeneratedDirectory() {
+  return GENERATED_DIR;
+}
 
 function decimal(value: Prisma.Decimal | number | string | null | undefined) {
   if (value == null) return ZERO;
@@ -36,10 +113,6 @@ function roundMoney(value: Prisma.Decimal | number | string) {
 
 function addMoney(...values: Array<Prisma.Decimal | number | string | null | undefined>) {
   return values.reduce<Prisma.Decimal>((sum, value) => sum.add(decimal(value)), ZERO);
-}
-
-function startOfDay(value: Date) {
-  return new Date(value.getFullYear(), value.getMonth(), value.getDate());
 }
 
 function sumRecordedPayments(
@@ -55,7 +128,11 @@ function sumRecordedPayments(
 }
 
 function fmtDate(value: Date) {
-  return value.toISOString().slice(0, 10);
+  return serializeUtcDateOnly(value);
+}
+
+function periodIdentity(periodStart: Date, periodEnd: Date) {
+  return `${periodStart.toISOString()}::${periodEnd.toISOString()}`;
 }
 
 function escapeHtml(value: string) {
@@ -140,11 +217,16 @@ function selectDashboardAuditLogs(
     createdAt: Date;
     targetType: string;
     targetId: string;
+    metadataJson: Prisma.JsonValue;
   }>
 ) {
   const dashboardActions = new Set([
     "REMITTANCE_MARKED_PAID",
+    "REMITTANCE_SOURCE_EVALUATED",
+    "REMITTANCE_QUARANTINED",
     "T4_PACKAGE_GENERATED",
+    "T4_PACKAGE_GENERATION_FAILED",
+    "T4_FINALIZED_REVALIDATION_REVIEW_REQUIRED",
   ]);
   const seen = new Set<string>();
 
@@ -164,20 +246,21 @@ function selectDashboardAuditLogs(
 }
 
 function getMonthRange(year: number, month: number) {
-  const start = new Date(year, month, 1);
-  const end = new Date(year, month + 1, 0);
+  const start = createUtcDateOnly(year, month, 1);
+  const end = createUtcDateOnly(year, month + 1, 0);
   return { start, end };
 }
 
 function getQuarterRange(year: number, quarterIndex: number) {
   const startMonth = quarterIndex * 3;
-  const start = new Date(year, startMonth, 1);
-  const end = new Date(year, startMonth + 3, 0);
+  const start = createUtcDateOnly(year, startMonth, 1);
+  const end = createUtcDateOnly(year, startMonth + 3, 0);
   return { start, end };
 }
 
 function getQuarterLabel(date: Date) {
-  return `Q${Math.floor(date.getMonth() / 3) + 1} ${date.getFullYear()}`;
+  const { year, monthIndex } = getDateOnlyParts(date);
+  return `Q${Math.floor(monthIndex / 3) + 1} ${year}`;
 }
 
 function normalizeOptionalText(value?: string | null) {
@@ -249,11 +332,71 @@ async function writeGeneratedFile(params: {
   fileName: string;
   contents: string | Buffer;
 }) {
-  await fs.mkdir(GENERATED_DIR, { recursive: true });
-  const relativePath = path.join("generated", "cra", `${params.companyId.toString()}-${params.fileName}`);
-  const absolutePath = path.join(process.cwd(), relativePath);
-  await fs.writeFile(absolutePath, params.contents);
+  await fs.mkdir(GENERATED_DIR, { recursive: true, mode: 0o700 });
+  await fs.chmod(GENERATED_DIR, 0o700);
+  const absolutePath = path.join(GENERATED_DIR, `${params.companyId.toString()}-${params.fileName}`);
+  const relativePath = path.relative(process.cwd(), absolutePath);
+  const temporaryPath = `${absolutePath}.tmp-${randomUUID()}`;
+  try {
+    await fs.writeFile(temporaryPath, params.contents, { flag: "wx", mode: 0o600 });
+    await fs.chmod(temporaryPath, 0o600);
+    await fs.rename(temporaryPath, absolutePath);
+    await fs.chmod(absolutePath, 0o600);
+  } catch (error) {
+    await fs.unlink(temporaryPath).catch(() => undefined);
+    throw error;
+  }
   return relativePath;
+}
+
+export async function reconcileCraArtifactStorage(params: {
+  apply?: boolean;
+  minimumAgeMs?: number;
+} = {}) {
+  const apply = params.apply ?? false;
+  const minimumAgeMs = Math.max(params.minimumAgeMs ?? 60 * 60 * 1000, 0);
+  await fs.mkdir(GENERATED_DIR, { recursive: true, mode: 0o700 });
+  await fs.chmod(GENERATED_DIR, 0o700);
+
+  const referenced = new Set(
+    (await prisma.document.findMany({ select: { storagePath: true } })).map((document) =>
+      path.resolve(process.cwd(), document.storagePath)
+    )
+  );
+  const entries = await fs.readdir(GENERATED_DIR, { withFileTypes: true });
+  const reasonCounts = {
+    UNPUBLISHED_TEMPORARY_FILE: 0,
+    UNREFERENCED_ARTIFACT: 0,
+  };
+  let removedCount = 0;
+  const now = Date.now();
+
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const absolutePath = path.join(GENERATED_DIR, entry.name);
+    const stat = await fs.stat(absolutePath);
+    if (now - stat.mtimeMs < minimumAgeMs) continue;
+
+    const reason = entry.name.includes(".tmp-")
+      ? "UNPUBLISHED_TEMPORARY_FILE" as const
+      : referenced.has(absolutePath)
+        ? null
+        : "UNREFERENCED_ARTIFACT" as const;
+    if (!reason) continue;
+    reasonCounts[reason] += 1;
+
+    if (apply) {
+      await fs.unlink(absolutePath);
+      removedCount += 1;
+    }
+  }
+
+  return {
+    mode: apply ? "apply" as const : "dry-run" as const,
+    detectedCount: reasonCounts.UNPUBLISHED_TEMPORARY_FILE + reasonCounts.UNREFERENCED_ARTIFACT,
+    removedCount,
+    reasonCounts,
+  };
 }
 
 async function renderPdfBuffer(browser: Browser, html: string) {
@@ -527,24 +670,25 @@ export async function getMissingT4FilingSettings(companyId: bigint) {
 }
 
 export function calculateRemittanceDueDate(remitterType: RemitterType, periodEnd: Date) {
-  const end = startOfDay(periodEnd);
+  const end = getDateOnlyParts(periodEnd);
 
   if (remitterType === "QUARTERLY") {
-    return new Date(end.getFullYear(), end.getMonth() + 1, 15);
+    return createUtcDateOnly(end.year, end.monthIndex + 1, 15);
   }
 
   if (remitterType === "ACCELERATED_THRESHOLD_1" || remitterType === "ACCELERATED_THRESHOLD_2") {
     // MVP structure-ready fallback. Real accelerated rules should replace this later.
-    return new Date(end.getFullYear(), end.getMonth() + 1, 15);
+    return createUtcDateOnly(end.year, end.monthIndex + 1, 15);
   }
 
-  return new Date(end.getFullYear(), end.getMonth() + 1, 15);
+  return createUtcDateOnly(end.year, end.monthIndex + 1, 15);
 }
 
-function deriveRemittanceStatus(
+export function deriveRemittanceStatus(
   dueDate: Date,
   totalPayable: Prisma.Decimal | number | string,
-  totalPaid: Prisma.Decimal | number | string
+  totalPaid: Prisma.Decimal | number | string,
+  today = getTodayUtcDateOnly()
 ) {
   const payable = decimal(totalPayable);
   const paid = decimal(totalPaid);
@@ -557,52 +701,66 @@ function deriveRemittanceStatus(
     return RemittanceStatus.PARTIALLY_PAID;
   }
 
-  const today = startOfDay(new Date());
-  if (startOfDay(dueDate) < today) return RemittanceStatus.OVERDUE;
+  if (compareUtcDateOnly(dueDate, today) < 0) return RemittanceStatus.OVERDUE;
   return RemittanceStatus.DUE;
 }
 
-export function getReminderState(remittance: { dueDate: Date; status: RemittanceStatus }) {
-  if (remittance.status === RemittanceStatus.PAID) {
+export function getReminderState(
+  remittance: { dueDate: Date; status: RemittanceStatus },
+  now = new Date()
+) {
+  if (
+    remittance.status === RemittanceStatus.PAID ||
+    remittance.status === RemittanceStatus.REVIEW_REQUIRED
+  ) {
     return ReminderState.PAID_NO_REMINDER;
   }
 
-  const today = startOfDay(new Date());
-  const dueDate = startOfDay(remittance.dueDate);
-  if (dueDate.getTime() === today.getTime()) return ReminderState.DUE_TODAY;
-  if (dueDate < today) return ReminderState.OVERDUE;
+  const today = getTodayUtcDateOnly(now);
+  const comparison = compareUtcDateOnly(remittance.dueDate, today);
+  if (comparison === 0) return ReminderState.DUE_TODAY;
+  if (comparison < 0) return ReminderState.OVERDUE;
   return ReminderState.UPCOMING;
 }
 
 type RemittanceSourceRow = {
   id: bigint;
   employeeId: bigint;
+  payrollRunId: bigint | null;
   payDate: Date;
   ded_income_tax: Prisma.Decimal;
   ded_cpp: Prisma.Decimal;
   ded_ei: Prisma.Decimal;
+  updatedAt: Date;
+};
+
+type RemittancePeriod = {
+  label: string;
+  start: Date;
+  end: Date;
+  rows: RemittanceSourceRow[];
 };
 
 function buildPeriods(rows: RemittanceSourceRow[], remitterType: RemitterType) {
-  const groups = new Map<string, { label: string; start: Date; end: Date; rows: RemittanceSourceRow[] }>();
+  const groups = new Map<string, RemittancePeriod>();
 
   for (const row of rows) {
     const date = row.payDate;
-    const year = date.getFullYear();
+    const { year, monthIndex } = getDateOnlyParts(date);
 
     let key: string;
     let label: string;
     let range: { start: Date; end: Date };
 
     if (remitterType === "QUARTERLY") {
-      const quarterIndex = Math.floor(date.getMonth() / 3);
+      const quarterIndex = Math.floor(monthIndex / 3);
       range = getQuarterRange(year, quarterIndex);
       label = getQuarterLabel(date);
       key = `${year}-Q${quarterIndex + 1}`;
     } else {
-      range = getMonthRange(year, date.getMonth());
-      label = `${date.toLocaleString("en-CA", { month: "long" })} ${year}`;
-      key = `${year}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      range = getMonthRange(year, monthIndex);
+      label = `${date.toLocaleString("en-CA", { month: "long", timeZone: "UTC" })} ${year}`;
+      key = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
     }
 
     const current = groups.get(key);
@@ -620,6 +778,85 @@ function buildPeriods(rows: RemittanceSourceRow[], remitterType: RemitterType) {
   }
 
   return Array.from(groups.values()).sort((a, b) => b.start.getTime() - a.start.getTime());
+}
+
+function calculateRemittancePeriod(period: RemittancePeriod, remitterType: RemitterType) {
+  const incomeTax = period.rows.reduce((sum, row) => sum.add(row.ded_income_tax), ZERO);
+  const cppEmployee = period.rows.reduce((sum, row) => sum.add(row.ded_cpp), ZERO);
+  const eiEmployee = period.rows.reduce((sum, row) => sum.add(row.ded_ei), ZERO);
+  const cppEmployer = roundMoney(cppEmployee);
+  const eiEmployer = roundMoney(eiEmployee.mul(1.4));
+  const totalPayable = roundMoney(addMoney(incomeTax, cppEmployee, cppEmployer, eiEmployee, eiEmployer));
+  const employeeCount = new Set(period.rows.map((row) => row.employeeId.toString())).size;
+  const dueDate = calculateRemittanceDueDate(remitterType, period.end);
+  const fingerprint = createHash("sha256").update(JSON.stringify({
+    version: REMITTANCE_SOURCE_VERSION,
+    remitterType,
+    periodStart: period.start.toISOString(),
+    periodEnd: period.end.toISOString(),
+    dueDate: dueDate.toISOString(),
+    rows: [...period.rows]
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      .map((row) => ({
+        id: row.id.toString(),
+        employeeId: row.employeeId.toString(),
+        payDate: row.payDate.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+        incomeTax: row.ded_income_tax.toFixed(2),
+        cpp: row.ded_cpp.toFixed(2),
+        ei: row.ded_ei.toFixed(2),
+      })),
+  })).digest("hex");
+
+  return {
+    incomeTax: roundMoney(incomeTax),
+    cppEmployee: roundMoney(cppEmployee),
+    cppEmployer,
+    eiEmployee: roundMoney(eiEmployee),
+    eiEmployer,
+    totalPayable,
+    employeeCount,
+    dueDate,
+    fingerprint,
+  };
+}
+
+async function lockRemittancePeriod(
+  tx: Prisma.TransactionClient,
+  companyId: bigint,
+  periodStart: Date,
+  periodEnd: Date
+) {
+  const key = `${companyId.toString()}:${periodStart.toISOString()}:${periodEnd.toISOString()}`;
+  await tx.$queryRaw`
+    SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))::text AS "lock"
+  `;
+}
+
+function priorRemittanceSnapshot(remittance: {
+  employeeCount: number;
+  totalIncomeTax: Prisma.Decimal;
+  totalCppEmployee: Prisma.Decimal;
+  totalCppEmployer: Prisma.Decimal;
+  totalEiEmployee: Prisma.Decimal;
+  totalEiEmployer: Prisma.Decimal;
+  totalPayable: Prisma.Decimal;
+  sourceFingerprint: string | null;
+  sourceVersion: string | null;
+  reportPublishedAt: Date | null;
+}) {
+  return {
+    employeeCount: remittance.employeeCount,
+    totalIncomeTax: remittance.totalIncomeTax.toFixed(2),
+    totalCppEmployee: remittance.totalCppEmployee.toFixed(2),
+    totalCppEmployer: remittance.totalCppEmployer.toFixed(2),
+    totalEiEmployee: remittance.totalEiEmployee.toFixed(2),
+    totalEiEmployer: remittance.totalEiEmployer.toFixed(2),
+    totalPayable: remittance.totalPayable.toFixed(2),
+    sourceFingerprint: remittance.sourceFingerprint,
+    sourceVersion: remittance.sourceVersion,
+    reportPublishedAt: remittance.reportPublishedAt?.toISOString() ?? null,
+  };
 }
 
 async function logAudit(params: {
@@ -641,9 +878,22 @@ async function logAudit(params: {
   });
 }
 
-export async function syncRemittancesForCompany(companyId: bigint) {
+export type RemittanceSyncTestHooks = {
+  afterPdfRendered?: (context: { fingerprint: string }) => Promise<void>;
+  afterReportWritten?: (context: { fingerprint: string; storagePath: string }) => Promise<void>;
+  afterEligibilityRevalidated?: (context: { payrollRunCount: number }) => Promise<void>;
+  beforePublicationCommit?: (context: { fingerprint: string; remittanceId: bigint }) => Promise<void>;
+  publicationLockTimeoutMs?: number;
+};
+
+export async function syncRemittancesForCompany(
+  companyId: bigint,
+  testHooks: RemittanceSyncTestHooks = {}
+) {
+  const operationNow = new Date();
+  const verificationCutoff = getProviderVerificationCutoff(operationNow);
   const settings = await getOrCreateCompanyPayrollSettings(companyId);
-  const payHistory = await prisma.payHistory.findMany({
+  const sourceRows = await prisma.payHistory.findMany({
     where: {
       employee: {
         companyId,
@@ -656,106 +906,242 @@ export async function syncRemittancesForCompany(companyId: bigint) {
       ded_income_tax: true,
       ded_cpp: true,
       ded_ei: true,
+      updatedAt: true,
+      status: true,
+      paidAt: true,
+      paymentProvider: true,
+      paymentRef: true,
+      payrollRunId: true,
+      payrollRun: {
+        select: COMPLIANCE_PAYROLL_RUN_SELECT,
+      },
     },
     orderBy: { payDate: "asc" },
   });
 
+  const payrollSelection = partitionCompliancePayrollRows(
+    sourceRows,
+    companyId,
+    verificationCutoff
+  );
+  const eligibilityEvaluationFingerprint = createHash("sha256").update(JSON.stringify({
+    rows: sourceRows.map((row) => ({
+      id: row.id.toString(),
+      updatedAt: row.updatedAt.toISOString(),
+      childStatus: row.status,
+      hasPaidAt: Boolean(row.paidAt),
+      hasPaymentProvider: Boolean(row.paymentProvider?.trim()),
+      hasPaymentRef: Boolean(row.paymentRef?.trim()),
+      parentStatus: row.payrollRun?.status ?? null,
+      hasProviderRef: Boolean(row.payrollRun?.providerRef?.trim()),
+      verificationStatus: row.payrollRun?.providerVerificationStatus ?? null,
+      lastSucceededAt: row.payrollRun?.providerVerificationLastSucceededAt?.toISOString() ?? null,
+      evidenceVersion: row.payrollRun?.providerEvidenceVersion ?? null,
+    })),
+    includedCount: payrollSelection.included.length,
+    excludedCount: payrollSelection.excludedCount,
+    reasonCounts: payrollSelection.reasonCounts,
+  })).digest("hex");
+  const payHistory = payrollSelection.included;
   const periods = buildPeriods(payHistory, settings.remitterType);
+  const eligiblePeriodKeys = new Set(
+    periods.map((period) => periodIdentity(period.start, period.end))
+  );
+  const existingRemittances = await prisma.remittance.findMany({
+    where: { companyId },
+    select: {
+      id: true,
+      periodStart: true,
+      periodEnd: true,
+      sourceFingerprint: true,
+      sourceVersion: true,
+      status: true,
+      allocations: { select: { payHistoryId: true } },
+      documents: {
+        where: { documentType: "REMITTANCE_REPORT", validationStatus: "ACTIVE" },
+        select: { id: true },
+      },
+    },
+  });
+  const excludedPayHistoryIds = new Set(
+    sourceRows
+      .filter((row) => !payrollSelection.included.some((included) => included.id === row.id))
+      .map((row) => row.id.toString())
+  );
+  const reviewRequiredPeriodKeys = new Set<string>();
+
+  for (const existing of existingRemittances) {
+    const periodKey = periodIdentity(existing.periodStart, existing.periodEnd);
+    const hasIneligibleAllocation = existing.allocations.some((allocation) =>
+      excludedPayHistoryIds.has(allocation.payHistoryId.toString())
+    );
+    if (eligiblePeriodKeys.has(periodKey) && !hasIneligibleAllocation) {
+      continue;
+    }
+
+    const periodSourceRows = sourceRows.filter(
+      (row) => row.payDate >= existing.periodStart && row.payDate <= existing.periodEnd
+    );
+    const periodSelection = partitionCompliancePayrollRows(
+      periodSourceRows,
+      companyId,
+      verificationCutoff
+    );
+    const reasonCode = hasIneligibleAllocation
+      ? "INELIGIBLE_PROVIDER_EVIDENCE_FOR_PERIOD"
+      : "NO_ELIGIBLE_PAYROLL_FOR_PERIOD";
+    reviewRequiredPeriodKeys.add(periodKey);
+
+    await prisma.$transaction(async (tx) => {
+      await lockRemittancePeriod(tx, companyId, existing.periodStart, existing.periodEnd);
+      const current = await tx.remittance.findUniqueOrThrow({
+        where: { id: existing.id },
+        include: {
+          payments: { where: { status: "RECORDED" }, select: { id: true } },
+          allocations: { select: { payHistoryId: true } },
+          documents: {
+            where: { documentType: "REMITTANCE_REPORT", validationStatus: "ACTIVE" },
+            select: { id: true },
+          },
+        },
+      });
+      const alreadyQuarantined =
+        current.status === RemittanceStatus.REVIEW_REQUIRED &&
+        current.allocations.length === 0 &&
+        current.documents.length === 0;
+      if (alreadyQuarantined) return;
+
+      const reviewRequiredAt = new Date();
+      const priorSnapshot = priorRemittanceSnapshot(current);
+      await tx.reminderEvent.deleteMany({
+        where: { remittanceId: existing.id, sentAt: null },
+      });
+      await tx.remittancePayHistory.deleteMany({
+        where: { remittanceId: existing.id },
+      });
+      await tx.document.updateMany({
+        where: {
+          remittanceId: existing.id,
+          documentType: "REMITTANCE_REPORT",
+          validationStatus: "ACTIVE",
+        },
+        data: {
+          validationStatus: "QUARANTINED",
+          validationReason: reasonCode,
+          quarantinedAt: reviewRequiredAt,
+        },
+      });
+      await tx.remittance.update({
+        where: { id: existing.id },
+        data: {
+          status: "REVIEW_REQUIRED",
+          reviewRequiredAt,
+          reconciliationSummary: {
+            reasonCode,
+            recordedPaymentCount: current.payments.length,
+            priorPublishedSnapshot: priorSnapshot,
+            includedCount: periodSelection.included.length,
+            excludedCount: periodSelection.excludedCount,
+            reasonCounts: periodSelection.reasonCounts,
+          },
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          companyId,
+          actorType: "SYSTEM",
+          action: "REMITTANCE_QUARANTINED",
+          targetType: "Remittance",
+          targetId: existing.id.toString(),
+          metadataJson: {
+            reasonCode,
+            recordedPaymentCount: current.payments.length,
+            priorPublishedSnapshot: priorSnapshot,
+            includedCount: periodSelection.included.length,
+            excludedCount: periodSelection.excludedCount,
+            reasonCounts: periodSelection.reasonCounts,
+          },
+        },
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+  }
+  if (
+    periods.length === 0 &&
+    payrollSelection.excludedCount > 0 &&
+    existingRemittances.length === 0
+  ) {
+    const priorEvaluation = await prisma.auditLog.findFirst({
+      where: {
+        companyId,
+        action: "REMITTANCE_GENERATION_SKIPPED",
+        targetType: "Company",
+        targetId: companyId.toString(),
+      },
+      orderBy: { id: "desc" },
+      select: { metadataJson: true },
+    });
+    const priorFingerprint = (
+      priorEvaluation?.metadataJson as { eligibilityEvaluationFingerprint?: string } | null
+    )?.eligibilityEvaluationFingerprint;
+    if (priorFingerprint !== eligibilityEvaluationFingerprint) {
+      await logAudit({
+        companyId,
+        action: "REMITTANCE_GENERATION_SKIPPED",
+        targetType: "Company",
+        targetId: companyId.toString(),
+        metadata: {
+          reasonCode: "NO_ELIGIBLE_PAYROLL",
+          includedCount: 0,
+          excludedCount: payrollSelection.excludedCount,
+          reasonCounts: payrollSelection.reasonCounts,
+          eligibilityEvaluationFingerprint,
+        },
+      });
+    }
+  }
   let browser: Browser | null = null;
 
   try {
     for (const period of periods) {
-      const incomeTax = period.rows.reduce((sum, row) => sum.add(row.ded_income_tax), ZERO);
-      const cppEmployee = period.rows.reduce((sum, row) => sum.add(row.ded_cpp), ZERO);
-      const eiEmployee = period.rows.reduce((sum, row) => sum.add(row.ded_ei), ZERO);
-      const cppEmployer = roundMoney(cppEmployee.mul(CPP_RATE).div(CPP_RATE));
-      const eiEmployer = roundMoney(eiEmployee.mul(EI_RATE * 1.4).div(EI_RATE));
-      const totalPayable = roundMoney(addMoney(incomeTax, cppEmployee, cppEmployer, eiEmployee, eiEmployer));
-
-      const employeeCount = new Set(period.rows.map((row) => row.employeeId.toString())).size;
-      const dueDate = calculateRemittanceDueDate(settings.remitterType, period.end);
-
-      const remittance = await prisma.remittance.upsert({
-        where: {
-          companyId_periodStart_periodEnd: {
-            companyId,
-            periodStart: period.start,
-            periodEnd: period.end,
-          },
-        },
-        update: {
-          remitterTypeSnapshot: settings.remitterType,
-          dueDate,
-          employeeCount,
-          totalIncomeTax: roundMoney(incomeTax),
-          totalCppEmployee: roundMoney(cppEmployee),
-          totalCppEmployer: roundMoney(cppEmployer),
-          totalEiEmployee: roundMoney(eiEmployee),
-          totalEiEmployer: roundMoney(eiEmployer),
-          totalPayable,
-        },
-        create: {
-          companyId,
-          periodStart: period.start,
-          periodEnd: period.end,
-          remitterTypeSnapshot: settings.remitterType,
-          dueDate,
-          employeeCount,
-          totalIncomeTax: roundMoney(incomeTax),
-          totalCppEmployee: roundMoney(cppEmployee),
-          totalCppEmployer: roundMoney(cppEmployer),
-          totalEiEmployee: roundMoney(eiEmployee),
-          totalEiEmployer: roundMoney(eiEmployer),
-          totalPayable,
-        },
-      });
-
-      const recordedPayments = await prisma.remittancePayment.findMany({
-        where: {
-          remittanceId: remittance.id,
-          status: "RECORDED",
-        },
-        orderBy: { paymentDate: "desc" },
-      });
-
-      const totalPaid = sumRecordedPayments(recordedPayments);
-      const paidInFull = totalPaid.greaterThanOrEqualTo(totalPayable) && totalPayable.greaterThan(0);
-
-      await prisma.remittance.update({
-        where: { id: remittance.id },
-        data: {
-          paidAt: paidInFull ? recordedPayments[0]?.paymentDate ?? null : null,
-          status: deriveRemittanceStatus(dueDate, totalPayable, totalPaid),
-        },
-      });
-
-      await prisma.remittancePayHistory.deleteMany({
-        where: { remittanceId: remittance.id },
-      });
-
-      if (period.rows.length > 0) {
-        await prisma.remittancePayHistory.createMany({
-          data: period.rows.map((row) => ({
-            remittanceId: remittance.id,
-            payHistoryId: row.id,
-          })),
-          skipDuplicates: true,
-        });
+      const periodKey = periodIdentity(period.start, period.end);
+      if (reviewRequiredPeriodKeys.has(periodKey)) continue;
+      const periodSourceRows = sourceRows.filter(
+        (row) => row.payDate >= period.start && row.payDate <= period.end
+      );
+      const periodSelection = partitionCompliancePayrollRows(
+        periodSourceRows,
+        companyId,
+        verificationCutoff
+      );
+      const periodSourceMembershipFingerprint =
+        createComplianceSourceMembershipFingerprint(periodSourceRows);
+      const calculated = calculateRemittancePeriod(period, settings.remitterType);
+      const existing = existingRemittances.find(
+        (item) => periodIdentity(item.periodStart, item.periodEnd) === periodIdentity(period.start, period.end)
+      );
+      if (
+        existing?.sourceFingerprint === calculated.fingerprint &&
+        existing.sourceVersion === REMITTANCE_SOURCE_VERSION &&
+        existing.documents.length === 1 &&
+        existing.status !== RemittanceStatus.REVIEW_REQUIRED &&
+        existing.allocations.length === period.rows.length
+      ) {
+        continue;
       }
 
       const reportPayload = {
         label: period.label,
         periodStart: fmtDate(period.start),
         periodEnd: fmtDate(period.end),
-        dueDate: fmtDate(dueDate),
-        employeeCount,
+        dueDate: fmtDate(calculated.dueDate),
+        employeeCount: calculated.employeeCount,
         totals: {
-          incomeTax: roundMoney(incomeTax).toNumber(),
-          cppEmployee: roundMoney(cppEmployee).toNumber(),
-          cppEmployer: roundMoney(cppEmployer).toNumber(),
-          eiEmployee: roundMoney(eiEmployee).toNumber(),
-          eiEmployer: roundMoney(eiEmployer).toNumber(),
-          totalPayable: totalPayable.toNumber(),
+          incomeTax: calculated.incomeTax.toNumber(),
+          cppEmployee: calculated.cppEmployee.toNumber(),
+          cppEmployer: calculated.cppEmployer.toNumber(),
+          eiEmployee: calculated.eiEmployee.toNumber(),
+          eiEmployer: calculated.eiEmployer.toNumber(),
+          totalPayable: calculated.totalPayable.toNumber(),
         },
       };
 
@@ -764,33 +1150,288 @@ export async function syncRemittancesForCompany(companyId: bigint) {
       }
 
       const reportPdfBuffer = await renderPdfBuffer(browser, renderRemittanceReportHtml(reportPayload));
-      const storagePath = await writeGeneratedFile({
-        companyId,
-        fileName: `remittance-${fmtDate(period.start)}-${fmtDate(period.end)}.pdf`,
-        contents: reportPdfBuffer,
-      });
-
-      await prisma.document.deleteMany({
-        where: {
-          remittanceId: remittance.id,
-          documentType: "REMITTANCE_REPORT",
-        },
-      });
-
-      await prisma.document.create({
-        data: {
+      await testHooks.afterPdfRendered?.({ fingerprint: calculated.fingerprint });
+      const generationId = randomUUID();
+      let storagePath: string | null = null;
+      try {
+        storagePath = await writeGeneratedFile({
           companyId,
-          documentType: "REMITTANCE_REPORT",
-          fileName: path.basename(storagePath),
-          storagePath,
-          mimeType: "application/pdf",
-          linkedEntityType: "REMITTANCE",
-          linkedEntityId: remittance.id,
-          remittanceId: remittance.id,
-        },
-      });
+          fileName: `remittance-${fmtDate(period.start)}-${fmtDate(period.end)}-${generationId}.pdf`,
+          contents: reportPdfBuffer,
+        });
+        await testHooks.afterReportWritten?.({ fingerprint: calculated.fingerprint, storagePath });
 
-      await syncReminderEvents(companyId, remittance.id, dueDate, settings.preDueReminderDays);
+        const publication = await prisma.$transaction(async (tx) => {
+          const lockedPayrollRunIds = await lockCompanyComplianceScope(
+            tx,
+            companyId,
+            periodSourceRows.map((row) => row.payrollRunId),
+            { timeoutMs: testHooks.publicationLockTimeoutMs }
+          );
+          await lockRemittancePeriod(tx, companyId, period.start, period.end);
+          const transactionSettings = await tx.companyPayrollSettings.findUniqueOrThrow({
+            where: { companyId },
+            select: { remitterType: true, preDueReminderDays: true },
+          });
+          if (transactionSettings.remitterType !== settings.remitterType) {
+            throw new Error("REMITTANCE_SOURCE_CHANGED_DURING_PUBLICATION");
+          }
+
+          const transactionRows = await tx.payHistory.findMany({
+            where: {
+              employee: { companyId },
+              payDate: { gte: period.start, lte: period.end },
+            },
+            select: {
+              id: true,
+              employeeId: true,
+              payDate: true,
+              ded_income_tax: true,
+              ded_cpp: true,
+              ded_ei: true,
+              updatedAt: true,
+              status: true,
+              paidAt: true,
+              paymentProvider: true,
+              paymentRef: true,
+              payrollRunId: true,
+              payrollRun: { select: COMPLIANCE_PAYROLL_RUN_SELECT },
+            },
+            orderBy: [{ payDate: "asc" }, { id: "asc" }],
+          });
+          const transactionSelection = partitionCompliancePayrollRows(
+            transactionRows,
+            companyId,
+            verificationCutoff
+          );
+          const transactionSourceMembershipFingerprint =
+            createComplianceSourceMembershipFingerprint(transactionRows);
+          if (!sameBigIntIds(
+            transactionSelection.included.map((row) => row.id),
+            period.rows.map((row) => row.id)
+          ) || transactionSelection.excludedCount !== periodSelection.excludedCount ||
+            JSON.stringify(transactionSelection.reasonCounts) !==
+              JSON.stringify(periodSelection.reasonCounts) ||
+            transactionSourceMembershipFingerprint !== periodSourceMembershipFingerprint) {
+            throw new Error("REMITTANCE_PROVIDER_EVIDENCE_CHANGED_DURING_PUBLICATION");
+          }
+          const transactionPeriod = buildPeriods(transactionSelection.included, settings.remitterType)
+            .find((candidate) => periodIdentity(candidate.start, candidate.end) === periodIdentity(period.start, period.end));
+          if (!transactionPeriod) {
+            throw new Error("REMITTANCE_SOURCE_CHANGED_DURING_PUBLICATION");
+          }
+          const transactionCalculated = calculateRemittancePeriod(transactionPeriod, settings.remitterType);
+          if (transactionCalculated.fingerprint !== calculated.fingerprint) {
+            throw new Error("REMITTANCE_SOURCE_CHANGED_DURING_PUBLICATION");
+          }
+          await testHooks.afterEligibilityRevalidated?.({
+            payrollRunCount: lockedPayrollRunIds.length,
+          });
+
+          const current = await tx.remittance.findUnique({
+            where: {
+              companyId_periodStart_periodEnd: {
+                companyId,
+                periodStart: period.start,
+                periodEnd: period.end,
+              },
+            },
+            include: {
+              payments: { where: { status: "RECORDED" }, orderBy: { paymentDate: "desc" } },
+              documents: {
+                where: { documentType: "REMITTANCE_REPORT", validationStatus: "ACTIVE" },
+                select: { id: true },
+              },
+              allocations: { select: { payHistoryId: true } },
+            },
+          });
+          if (
+            current?.sourceFingerprint === calculated.fingerprint &&
+            current.sourceVersion === REMITTANCE_SOURCE_VERSION &&
+            current.documents.length === 1 &&
+            current.status !== RemittanceStatus.REVIEW_REQUIRED &&
+            current.allocations.length === period.rows.length
+          ) {
+            return { published: false, remittanceId: current.id };
+          }
+
+          const recordedPayments = current?.payments ?? [];
+          const totalPaid = sumRecordedPayments(recordedPayments);
+          const status = deriveRemittanceStatus(
+            calculated.dueDate,
+            calculated.totalPayable,
+            totalPaid
+          );
+          const publishedAt = new Date();
+          const remittance = await tx.remittance.upsert({
+            where: {
+              companyId_periodStart_periodEnd: {
+                companyId,
+                periodStart: period.start,
+                periodEnd: period.end,
+              },
+            },
+            update: {
+              remitterTypeSnapshot: settings.remitterType,
+              dueDate: calculated.dueDate,
+              employeeCount: calculated.employeeCount,
+              totalIncomeTax: calculated.incomeTax,
+              totalCppEmployee: calculated.cppEmployee,
+              totalCppEmployer: calculated.cppEmployer,
+              totalEiEmployee: calculated.eiEmployee,
+              totalEiEmployer: calculated.eiEmployer,
+              totalPayable: calculated.totalPayable,
+              paidAt: status === RemittanceStatus.PAID ? recordedPayments[0]?.paymentDate ?? null : null,
+              status,
+              reviewRequiredAt: null,
+              sourceFingerprint: calculated.fingerprint,
+              sourceVersion: REMITTANCE_SOURCE_VERSION,
+              reportPublishedAt: publishedAt,
+              reconciliationSummary: {
+                reasonCode: "ELIGIBLE_PAYROLL_RECONCILED",
+                eligiblePayrollCount: period.rows.length,
+                excludedPayrollCount: periodSelection.excludedCount,
+                reasonCounts: periodSelection.reasonCounts,
+                sourceFingerprint: calculated.fingerprint,
+                sourceVersion: REMITTANCE_SOURCE_VERSION,
+              },
+            },
+            create: {
+              companyId,
+              periodStart: period.start,
+              periodEnd: period.end,
+              remitterTypeSnapshot: settings.remitterType,
+              dueDate: calculated.dueDate,
+              employeeCount: calculated.employeeCount,
+              totalIncomeTax: calculated.incomeTax,
+              totalCppEmployee: calculated.cppEmployee,
+              totalCppEmployer: calculated.cppEmployer,
+              totalEiEmployee: calculated.eiEmployee,
+              totalEiEmployer: calculated.eiEmployer,
+              totalPayable: calculated.totalPayable,
+              paidAt: status === RemittanceStatus.PAID ? recordedPayments[0]?.paymentDate ?? null : null,
+              status,
+              sourceFingerprint: calculated.fingerprint,
+              sourceVersion: REMITTANCE_SOURCE_VERSION,
+              reportPublishedAt: publishedAt,
+              reconciliationSummary: {
+                reasonCode: "ELIGIBLE_PAYROLL_RECONCILED",
+                eligiblePayrollCount: period.rows.length,
+                excludedPayrollCount: periodSelection.excludedCount,
+                reasonCounts: periodSelection.reasonCounts,
+                sourceFingerprint: calculated.fingerprint,
+                sourceVersion: REMITTANCE_SOURCE_VERSION,
+              },
+            },
+          });
+
+          await tx.remittancePayHistory.deleteMany({ where: { remittanceId: remittance.id } });
+          await tx.remittancePayHistory.createMany({
+            data: period.rows.map((row) => ({ remittanceId: remittance.id, payHistoryId: row.id })),
+          });
+          const [allocationCount, eligibleAllocationCount] = await Promise.all([
+            tx.remittancePayHistory.count({ where: { remittanceId: remittance.id } }),
+            tx.remittancePayHistory.count({
+              where: {
+                remittanceId: remittance.id,
+                payHistory: { is: compliancePayrollWhere(companyId, verificationCutoff) },
+              },
+            }),
+          ]);
+          if (allocationCount !== period.rows.length || eligibleAllocationCount !== allocationCount) {
+            throw new Error("Remittance allocation eligibility invariant failed");
+          }
+
+          await tx.document.updateMany({
+            where: {
+              remittanceId: remittance.id,
+              documentType: "REMITTANCE_REPORT",
+              validationStatus: "ACTIVE",
+            },
+            data: {
+              validationStatus: "QUARANTINED",
+              validationReason: "SUPERSEDED_BY_RECONCILIATION",
+              quarantinedAt: publishedAt,
+            },
+          });
+          await tx.document.create({
+            data: {
+              companyId,
+              documentType: "REMITTANCE_REPORT",
+              fileName: path.basename(storagePath!),
+              storagePath: storagePath!,
+              mimeType: "application/pdf",
+              linkedEntityType: "REMITTANCE",
+              linkedEntityId: remittance.id,
+              remittanceId: remittance.id,
+              validationStatus: "ACTIVE",
+              generationId,
+              generationVersion: REMITTANCE_GENERATION_VERSION,
+            },
+          });
+          await tx.reminderEvent.deleteMany({
+            where: { remittanceId: remittance.id, sentAt: null },
+          });
+          const reminderDates = [
+            Math.max(transactionSettings.preDueReminderDays, 1), 3, 1,
+          ].filter((days, index, list) => days > 0 && list.indexOf(days) === index)
+            .map((days) => addUtcDateOnlyDays(calculated.dueDate, -days));
+          await tx.reminderEvent.createMany({
+            data: [
+              ...reminderDates.map((scheduledFor) => ({
+                companyId,
+                remittanceId: remittance.id,
+                reminderState: ReminderState.UPCOMING,
+                scheduledFor,
+              })),
+              {
+                companyId,
+                remittanceId: remittance.id,
+                reminderState: ReminderState.DUE_TODAY,
+                scheduledFor: calculated.dueDate,
+              },
+              {
+                companyId,
+                remittanceId: remittance.id,
+                reminderState: ReminderState.OVERDUE,
+                scheduledFor: addUtcDateOnlyDays(calculated.dueDate, 1),
+              },
+            ],
+          });
+          await tx.auditLog.create({
+            data: {
+              companyId,
+              actorType: "SYSTEM",
+              action: "REMITTANCE_REPORT_PUBLISHED",
+              targetType: "Remittance",
+              targetId: remittance.id.toString(),
+              metadataJson: {
+                generationId,
+                generationVersion: REMITTANCE_GENERATION_VERSION,
+                sourceFingerprint: calculated.fingerprint,
+                sourceVersion: REMITTANCE_SOURCE_VERSION,
+                includedCount: period.rows.length,
+                excludedCount: periodSelection.excludedCount,
+                reasonCounts: periodSelection.reasonCounts,
+              },
+            },
+          });
+          await testHooks.beforePublicationCommit?.({
+            fingerprint: calculated.fingerprint,
+            remittanceId: remittance.id,
+          });
+          return { published: true, remittanceId: remittance.id };
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+
+        if (!publication.published) {
+          await fs.unlink(path.resolve(process.cwd(), storagePath)).catch(() => undefined);
+        }
+      } catch (error) {
+        if (storagePath) {
+          await fs.unlink(path.resolve(process.cwd(), storagePath)).catch(() => undefined);
+        }
+        throw error;
+      }
     }
 
     return prisma.remittance.findMany({
@@ -810,54 +1451,10 @@ export async function syncRemittancesForCompany(companyId: bigint) {
   }
 }
 
-async function syncReminderEvents(
-  companyId: bigint,
-  remittanceId: bigint,
-  dueDate: Date,
-  preDueReminderDays: number
-) {
-  await prisma.reminderEvent.deleteMany({
-    where: { remittanceId },
-  });
-
-  const reminderDates = [
-    Math.max(preDueReminderDays, 1),
-    3,
-    1,
-  ]
-    .filter((days, index, list) => days > 0 && list.indexOf(days) === index)
-    .map((days) => new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate() - days));
-
-  const overdueDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate() + 1);
-
-  const data = [
-    ...reminderDates.map((scheduledFor) => ({
-      companyId,
-      remittanceId,
-      reminderState: ReminderState.UPCOMING,
-      scheduledFor,
-    })),
-    {
-      companyId,
-      remittanceId,
-      reminderState: ReminderState.DUE_TODAY,
-      scheduledFor: dueDate,
-    },
-    {
-      companyId,
-      remittanceId,
-      reminderState: ReminderState.OVERDUE,
-      scheduledFor: overdueDate,
-    },
-  ];
-
-  await prisma.reminderEvent.createMany({ data });
-}
-
 export async function recordRemittancePayment(params: {
   companyId: bigint;
   remittanceId: bigint;
-  paymentDate: Date;
+  paymentDate: Date | string;
   amountPaid: number;
   paymentMethod?: string | null;
   referenceNumber?: string | null;
@@ -873,8 +1470,11 @@ export async function recordRemittancePayment(params: {
   if (!remittance) {
     throw new Error("Remittance not found");
   }
+  if (remittance.status === RemittanceStatus.REVIEW_REQUIRED) {
+    throw new Error("Remittance requires reconciliation review before recording payments");
+  }
 
-  const normalizedPaymentDate = startOfDay(params.paymentDate);
+  const normalizedPaymentDate = normalizeUtcDateOnly(params.paymentDate);
   const normalizedAmountPaid = roundMoney(params.amountPaid);
   const paymentMethod = params.paymentMethod?.trim() || null;
   const referenceNumber = params.referenceNumber?.trim() || null;
@@ -957,16 +1557,184 @@ export async function recordRemittancePayment(params: {
   return payment;
 }
 
-export async function generateT4Package(companyId: bigint, taxYear: number) {
+async function quarantineT4GenerationFailure(params: {
+  companyId: bigint;
+  taxYear: number;
+  reasonCode: string;
+  metadata?: Prisma.InputJsonObject;
+}) {
+  const quarantinedAt = new Date();
+
+  return prisma.$transaction(async (tx) => {
+    const summary = await tx.t4Summary.findUnique({
+      where: {
+        companyId_taxYear: {
+          companyId: params.companyId,
+          taxYear: params.taxYear,
+        },
+      },
+      select: { id: true, status: true },
+    });
+
+    if (summary?.status === T4GenerationStatus.FINALIZED) {
+      await tx.auditLog.create({
+        data: {
+          companyId: params.companyId,
+          actorType: "SYSTEM",
+          action: "T4_FINALIZED_REVALIDATION_REVIEW_REQUIRED",
+          targetType: "T4Summary",
+          targetId: summary.id.toString(),
+          metadataJson: {
+            taxYear: params.taxYear,
+            reasonCode: params.reasonCode,
+            ...params.metadata,
+          },
+        },
+      });
+      return "FINALIZED_UNCHANGED" as const;
+    }
+
+    if (summary) {
+      const mutableSlips = await tx.t4Slip.findMany({
+        where: {
+          summaryId: summary.id,
+          status: { not: T4GenerationStatus.FINALIZED },
+        },
+        select: { id: true },
+      });
+      const mutableSlipIds = mutableSlips.map((slip) => slip.id);
+
+      if (mutableSlipIds.length > 0) {
+        await tx.document.updateMany({
+          where: {
+            t4SlipId: { in: mutableSlipIds },
+            validationStatus: "ACTIVE",
+          },
+          data: {
+            validationStatus: "QUARANTINED",
+            validationReason: params.reasonCode,
+            quarantinedAt,
+          },
+        });
+        await tx.t4Slip.updateMany({
+          where: { id: { in: mutableSlipIds } },
+          data: { status: T4GenerationStatus.QUARANTINED },
+        });
+      }
+
+      await tx.document.updateMany({
+        where: {
+          t4SummaryId: summary.id,
+          validationStatus: "ACTIVE",
+        },
+        data: {
+          validationStatus: "QUARANTINED",
+          validationReason: params.reasonCode,
+          quarantinedAt,
+        },
+      });
+      await tx.t4Summary.updateMany({
+        where: {
+          id: summary.id,
+          status: { not: T4GenerationStatus.FINALIZED },
+        },
+        data: {
+          status: T4GenerationStatus.QUARANTINED,
+          validationSummary: {
+            reasonCode: params.reasonCode,
+            ...params.metadata,
+          },
+          validatedAt: quarantinedAt,
+        },
+      });
+    }
+
+    await tx.auditLog.create({
+      data: {
+        companyId: params.companyId,
+        actorType: "SYSTEM",
+        action: "T4_PACKAGE_GENERATION_FAILED",
+        targetType: summary ? "T4Summary" : "Company",
+        targetId: summary?.id.toString() ?? params.companyId.toString(),
+        metadataJson: {
+          taxYear: params.taxYear,
+          reasonCode: params.reasonCode,
+          existingArtifactQuarantined: Boolean(summary),
+          ...params.metadata,
+        },
+      },
+    });
+
+    return summary ? "QUARANTINED" as const : "NO_EXISTING_ARTIFACT" as const;
+  });
+}
+
+export type T4GenerationTestHooks = {
+  afterArtifactsWritten?: () => Promise<void>;
+  afterEligibilityRevalidated?: (context: { payrollRunCount: number }) => Promise<void>;
+  beforeTransactionCommit?: () => Promise<void>;
+  publicationLockTimeoutMs?: number;
+};
+
+type ComplianceSourceSummary = {
+  includedCount: number;
+  excludedCount: number;
+  reasonCounts: Record<string, number>;
+  sourceFingerprint: string;
+  sourceMembershipFingerprint: string;
+};
+
+class T4SourceEligibilityChangedError extends Error {
+  readonly sourceSummary: ComplianceSourceSummary;
+
+  constructor(sourceSummary: ComplianceSourceSummary) {
+    super("T4 provider evidence changed during publication.");
+    this.name = "T4SourceEligibilityChangedError";
+    this.sourceSummary = sourceSummary;
+  }
+}
+
+export async function generateT4Package(
+  companyId: bigint,
+  taxYear: number,
+  testHooks: T4GenerationTestHooks = {}
+) {
+  const operationNow = new Date();
+  const verificationCutoff = getProviderVerificationCutoff(operationNow);
+  const taxYearRange = getUtcDateOnlyYearRange(taxYear);
   const settings = await getOrCreateCompanyPayrollSettings(companyId);
-  const rows = await prisma.payHistory.findMany({
+  const missingSettings = getMissingT4SettingsFromSettings(settings);
+  if (missingSettings.length > 0) {
+    await quarantineT4GenerationFailure({
+      companyId,
+      taxYear,
+      reasonCode: "T4_SETTINGS_VALIDATION_FAILED",
+      metadata: { missingSettingCount: missingSettings.length },
+    });
+    throw new Error(`CRA T4 filing settings incomplete: ${missingSettings.join(", ")}`);
+  }
+
+  const existingSummary = await prisma.t4Summary.findUnique({
+    where: { companyId_taxYear: { companyId, taxYear } },
+    select: { id: true, status: true },
+  });
+  if (existingSummary?.status === T4GenerationStatus.FINALIZED) {
+    await quarantineT4GenerationFailure({
+      companyId,
+      taxYear,
+      reasonCode: "FINALIZED_ARTIFACT_REGENERATION_REQUESTED",
+    });
+    throw new Error("A finalized T4 package cannot be regenerated");
+  }
+
+  const sourceRows = await prisma.payHistory.findMany({
     where: {
       employee: {
         companyId,
       },
       payDate: {
-        gte: new Date(taxYear, 0, 1),
-        lt: new Date(taxYear + 1, 0, 1),
+        gte: taxYearRange.start,
+        lt: taxYearRange.endExclusive,
       },
     },
     include: {
@@ -975,7 +1743,6 @@ export async function generateT4Package(companyId: bigint, taxYear: number) {
           id: true,
           firstName: true,
           lastName: true,
-          email: true,
           sin: true,
           addrLine1: true,
           addrLine2: true,
@@ -989,16 +1756,20 @@ export async function generateT4Package(companyId: bigint, taxYear: number) {
           pensionAdjustmentOverride: true,
         },
       },
+      payrollRun: {
+        select: COMPLIANCE_PAYROLL_RUN_SELECT,
+      },
     },
     orderBy: [{ employeeId: "asc" }, { payDate: "asc" }],
   });
 
   const contactPhone = splitPhoneNumber(settings.contactPhone);
-  const missingSettings = getMissingT4SettingsFromSettings(settings);
-
-  if (missingSettings.length > 0) {
-    throw new Error(`CRA T4 filing settings incomplete: ${missingSettings.join(", ")}`);
-  }
+  const payrollSelection = partitionCompliancePayrollRows(
+    sourceRows,
+    companyId,
+    verificationCutoff
+  );
+  const rows = payrollSelection.included;
 
   const byEmployee = new Map<string, typeof rows>();
   for (const row of rows) {
@@ -1009,6 +1780,74 @@ export async function generateT4Package(companyId: bigint, taxYear: number) {
     } else {
       byEmployee.set(key, [row]);
     }
+  }
+
+  const sourceSummary = {
+    includedCount: rows.length,
+    excludedCount: payrollSelection.excludedCount,
+    reasonCounts: payrollSelection.reasonCounts,
+    sourceFingerprint: createT4ComplianceSourceFingerprint(rows),
+    sourceMembershipFingerprint: createComplianceSourceMembershipFingerprint(sourceRows),
+  };
+
+  if (payrollSelection.excludedCount > 0) {
+    await quarantineT4GenerationFailure({
+      companyId,
+      taxYear,
+      reasonCode: "INELIGIBLE_PAYROLL_SOURCE_PRESENT",
+      metadata: {
+        ...sourceSummary,
+      },
+    });
+    throw new Error("T4 generation blocked by ineligible payroll source records");
+  }
+
+  if (rows.length === 0) {
+    await quarantineT4GenerationFailure({
+      companyId,
+      taxYear,
+      reasonCode: "NO_ELIGIBLE_PAYROLL",
+      metadata: sourceSummary,
+    });
+    throw new Error("T4 generation blocked because there is no eligible finalized payroll");
+  }
+
+  const resolvedSinByEmployee = new Map<string, string>();
+  const sinReasonCounts: Record<T4SinFailureReason, number> = {
+    SIN_ENCRYPTION_STATE_UNKNOWN: 0,
+    SIN_DECRYPTION_FAILED: 0,
+    INVALID_DECRYPTED_SIN: 0,
+  };
+
+  for (const [employeeId, employeeRows] of byEmployee) {
+    const storedSin = employeeRows[0]?.employee.sin;
+    const resolved = storedSin ? resolveSinForT4(storedSin) : {
+      ok: false as const,
+      reason: "SIN_ENCRYPTION_STATE_UNKNOWN" as const,
+    };
+    if (!resolved.ok) {
+      sinReasonCounts[resolved.reason] += 1;
+      continue;
+    }
+    resolvedSinByEmployee.set(employeeId, resolved.sin);
+  }
+
+  const invalidSinCount = Object.values(sinReasonCounts).reduce((sum, count) => sum + count, 0);
+  if (invalidSinCount > 0) {
+    await quarantineT4GenerationFailure({
+      companyId,
+      taxYear,
+      reasonCode: "T4_SIN_VALIDATION_FAILED",
+      metadata: {
+        ...sourceSummary,
+        invalidEmployeeCount: invalidSinCount,
+        reasonCounts: {
+          ...sourceSummary.reasonCounts,
+          ...sinReasonCounts,
+        },
+      },
+    });
+    throw new Error("T4 generation blocked by employee tax identifier validation");
   }
 
   const summary = {
@@ -1028,32 +1867,12 @@ export async function generateT4Package(companyId: bigint, taxYear: number) {
       remittance: { companyId },
       status: "RECORDED",
       paymentDate: {
-        gte: new Date(taxYear, 0, 1),
-        lt: new Date(taxYear + 1, 0, 1),
+        gte: taxYearRange.start,
+        lt: taxYearRange.endExclusive,
       },
     },
     select: { amountPaid: true },
   });
-
-  let t4Summary = await prisma.t4Summary.upsert({
-    where: {
-      companyId_taxYear: {
-        companyId,
-        taxYear,
-      },
-    },
-    update: {
-      status: T4GenerationStatus.GENERATED,
-      generatedAt: new Date(),
-    },
-    create: {
-      companyId,
-      taxYear,
-      status: T4GenerationStatus.GENERATED,
-      generatedAt: new Date(),
-    },
-  });
-
   const summaryAddress = {
     line1: settings.addressLine1!,
     line2: settings.addressLine2,
@@ -1071,18 +1890,23 @@ export async function generateT4Package(companyId: bigint, taxYear: number) {
     email: settings.contactEmail!,
   };
 
-  const slipPdfJobs: Array<{
-    slipId: bigint;
+  const slipJobs: Array<{
     employeeId: bigint;
     data: T4SlipData;
+    values: {
+      employmentIncome: Prisma.Decimal;
+      incomeTaxDeducted: Prisma.Decimal;
+      cppContributionsEmployee: Prisma.Decimal;
+      eiPremiumsEmployee: Prisma.Decimal;
+      otherBoxPayload: Prisma.InputJsonValue;
+    };
   }> = [];
 
   let browser: Browser | null = null;
+  const unpublishedStoragePaths: string[] = [];
 
   try {
-    browser = await puppeteer.launch({ headless: true });
-
-    for (const employeeRows of byEmployee.values()) {
+    for (const [employeeKey, employeeRows] of byEmployee) {
       const employee = employeeRows[0]?.employee;
       if (!employee) continue;
 
@@ -1136,44 +1960,11 @@ export async function generateT4Package(companyId: bigint, taxYear: number) {
         },
       };
 
-      const slip = await prisma.t4Slip.upsert({
-        where: {
-          companyId_employeeId_taxYear: {
-            companyId,
-            employeeId: employee.id,
-            taxYear,
-          },
-        },
-        update: {
-          status: T4GenerationStatus.GENERATED,
-          employmentIncome,
-          incomeTaxDeducted,
-          cppContributionsEmployee,
-          eiPremiumsEmployee,
-          otherBoxPayload,
-          generatedAt: new Date(),
-          summaryId: t4Summary.id,
-        },
-        create: {
-          companyId,
-          employeeId: employee.id,
-          taxYear,
-          status: T4GenerationStatus.GENERATED,
-          employmentIncome,
-          incomeTaxDeducted,
-          cppContributionsEmployee,
-          eiPremiumsEmployee,
-          otherBoxPayload,
-          generatedAt: new Date(),
-          summaryId: t4Summary.id,
-        },
-      });
-
       const slipData: T4SlipData = {
         employee: {
           firstName: employee.firstName,
           lastName: employee.lastName,
-          sin: employee.sin,
+          sin: resolvedSinByEmployee.get(employeeKey)!,
           address: {
             line1: employee.addrLine1,
             line2: employee.addrLine2,
@@ -1202,25 +1993,18 @@ export async function generateT4Package(companyId: bigint, taxYear: number) {
           : null,
       };
 
-      slipPdfJobs.push({
-        slipId: slip.id,
+      slipJobs.push({
         employeeId: employee.id,
         data: slipData,
+        values: {
+          employmentIncome,
+          incomeTaxDeducted,
+          cppContributionsEmployee,
+          eiPremiumsEmployee,
+          otherBoxPayload,
+        },
       });
     }
-
-    t4Summary = await prisma.t4Summary.update({
-      where: { id: t4Summary.id },
-      data: {
-        employeeCount: byEmployee.size,
-        totalEmploymentIncome: roundMoney(summary.employmentIncome),
-        totalIncomeTaxDeducted: roundMoney(summary.incomeTaxDeducted),
-        totalCppEmployee: roundMoney(summary.cppContributionsEmployee),
-        totalEiEmployee: roundMoney(summary.eiPremiumsEmployee),
-        status: T4GenerationStatus.GENERATED,
-        generatedAt: new Date(),
-      },
-    });
 
     const summaryData: T4SummaryData = {
       payrollAccountNumber: settings.payrollProgramAccount!,
@@ -1244,34 +2028,13 @@ export async function generateT4Package(companyId: bigint, taxYear: number) {
       },
     };
 
-    for (const job of slipPdfJobs) {
+    browser = await puppeteer.launch({ headless: true });
+    const renderedSlips: Array<{ employeeId: bigint; pdf: Buffer }> = [];
+    for (const job of slipJobs) {
       const slipHtml = renderEmployeeT4SlipHtml(job.data, taxYear, settings.legalName!);
-      const slipPdfBuffer = await renderPdfBuffer(browser, slipHtml);
-      const slipStoragePath = await writeGeneratedFile({
-        companyId,
-        fileName: `t4-slip-${taxYear}-${job.employeeId.toString()}.pdf`,
-        contents: slipPdfBuffer,
-      });
-
-      await prisma.document.deleteMany({
-        where: {
-          t4SlipId: job.slipId,
-          documentType: "T4_SLIP",
-        },
-      });
-
-      await prisma.document.create({
-        data: {
-          companyId,
-          documentType: "T4_SLIP",
-          fileName: path.basename(slipStoragePath),
-          storagePath: slipStoragePath,
-          mimeType: "application/pdf",
-          linkedEntityType: "T4_SLIP",
-          linkedEntityId: job.slipId,
-          taxYear,
-          t4SlipId: job.slipId,
-        },
+      renderedSlips.push({
+        employeeId: job.employeeId,
+        pdf: await renderPdfBuffer(browser, slipHtml),
       });
     }
 
@@ -1281,32 +2044,6 @@ export async function generateT4Package(companyId: bigint, taxYear: number) {
       formatMoneyString(remittancesReported)
     );
     const summaryPdfBuffer = await renderPdfBuffer(browser, summaryHtml);
-    const summaryStoragePath = await writeGeneratedFile({
-      companyId,
-      fileName: `t4-summary-${taxYear}.pdf`,
-      contents: summaryPdfBuffer,
-    });
-
-    await prisma.document.deleteMany({
-      where: {
-        t4SummaryId: t4Summary.id,
-        documentType: "T4_SUMMARY",
-      },
-    });
-
-    await prisma.document.create({
-      data: {
-        companyId,
-        documentType: "T4_SUMMARY",
-        fileName: path.basename(summaryStoragePath),
-        storagePath: summaryStoragePath,
-        mimeType: "application/pdf",
-        linkedEntityType: "T4_SUMMARY",
-        linkedEntityId: t4Summary.id,
-        taxYear,
-        t4SummaryId: t4Summary.id,
-      },
-    });
 
     const submissionXml = buildT4SubmissionXml({
       transmitterAccountNumber: settings.transmitterAccountNumber,
@@ -1317,47 +2054,369 @@ export async function generateT4Package(companyId: bigint, taxYear: number) {
       transmitterName: settings.legalName!,
       transmitterCountryCode: normalizeCountryCode(settings.countryCode),
       transmitterContact: summaryContact,
-      slips: slipPdfJobs.map((job) => job.data),
+      slips: slipJobs.map((job) => job.data),
       summary: summaryData,
     });
 
+    await browser.close();
+    browser = null;
+
+    // Use generation-unique names so a failed attempt can never overwrite a
+    // previously published artifact. Files are published to the database only
+    // after every PDF and the complete XML have been rendered successfully.
+    const generationId = randomUUID();
+    const slipStoragePaths = new Map<string, string>();
+    for (const rendered of renderedSlips) {
+      const storagePath = await writeGeneratedFile({
+        companyId,
+        fileName: `t4-slip-${taxYear}-${rendered.employeeId.toString()}-${generationId}.pdf`,
+        contents: rendered.pdf,
+      });
+      unpublishedStoragePaths.push(storagePath);
+      slipStoragePaths.set(rendered.employeeId.toString(), storagePath);
+    }
+    const summaryStoragePath = await writeGeneratedFile({
+      companyId,
+      fileName: `t4-summary-${taxYear}-${generationId}.pdf`,
+      contents: summaryPdfBuffer,
+    });
+    unpublishedStoragePaths.push(summaryStoragePath);
     const xmlStoragePath = await writeGeneratedFile({
       companyId,
-      fileName: `t4-return-${taxYear}.xml`,
+      fileName: `t4-return-${taxYear}-${generationId}.xml`,
       contents: submissionXml,
     });
+    unpublishedStoragePaths.push(xmlStoragePath);
+    await testHooks.afterArtifactsWritten?.();
 
-    await prisma.document.deleteMany({
-      where: {
-        t4SummaryId: t4Summary.id,
-        documentType: "OTHER",
-        fileName: path.basename(xmlStoragePath),
-      },
-    });
-
-    await prisma.document.create({
-      data: {
+    const generatedAt = new Date();
+    const t4Summary = await prisma.$transaction(async (tx) => {
+      const lockedPayrollRunIds = await lockCompanyComplianceScope(
+        tx,
         companyId,
-        documentType: "OTHER",
-        fileName: path.basename(xmlStoragePath),
-        storagePath: xmlStoragePath,
-        mimeType: "application/xml",
-        linkedEntityType: "T4_SUMMARY",
-        linkedEntityId: t4Summary.id,
-        taxYear,
-        t4SummaryId: t4Summary.id,
-      },
+        sourceRows.map((row) => row.payrollRunId),
+        { timeoutMs: testHooks.publicationLockTimeoutMs }
+      );
+      const currentSummary = await tx.t4Summary.findUnique({
+        where: { companyId_taxYear: { companyId, taxYear } },
+      });
+      if (currentSummary?.status === T4GenerationStatus.FINALIZED) {
+        throw new Error("FINALIZED_T4_SUMMARY_IS_IMMUTABLE");
+      }
+
+      const transactionRows = await tx.payHistory.findMany({
+        where: {
+          employee: { companyId },
+          payDate: {
+            gte: taxYearRange.start,
+            lt: taxYearRange.endExclusive,
+          },
+        },
+        select: {
+          id: true,
+          employeeId: true,
+          payDate: true,
+          updatedAt: true,
+          grossPay: true,
+          ded_cpp: true,
+          ded_ei: true,
+          ded_income_tax: true,
+          payrollRunId: true,
+          status: true,
+          paidAt: true,
+          paymentProvider: true,
+          paymentRef: true,
+          payrollRun: { select: COMPLIANCE_PAYROLL_RUN_SELECT },
+        },
+        orderBy: [{ employeeId: "asc" }, { payDate: "asc" }],
+      });
+      const transactionSelection = partitionCompliancePayrollRows(
+        transactionRows,
+        companyId,
+        verificationCutoff
+      );
+      const transactionSourceSummary = {
+        includedCount: transactionSelection.included.length,
+        excludedCount: transactionSelection.excludedCount,
+        reasonCounts: transactionSelection.reasonCounts,
+        sourceFingerprint: createT4ComplianceSourceFingerprint(transactionSelection.included),
+        sourceMembershipFingerprint:
+          createComplianceSourceMembershipFingerprint(transactionRows),
+      };
+      if (
+        transactionSelection.excludedCount > 0 ||
+        !sameBigIntIds(
+          transactionSelection.included.map((row) => row.id),
+          rows.map((row) => row.id)
+        ) ||
+        transactionSourceSummary.includedCount !== sourceSummary.includedCount ||
+        transactionSourceSummary.excludedCount !== sourceSummary.excludedCount ||
+        JSON.stringify(transactionSourceSummary.reasonCounts) !==
+          JSON.stringify(sourceSummary.reasonCounts) ||
+        transactionSourceSummary.sourceFingerprint !== sourceSummary.sourceFingerprint ||
+        transactionSourceSummary.sourceMembershipFingerprint !==
+          sourceSummary.sourceMembershipFingerprint
+      ) {
+        throw new T4SourceEligibilityChangedError(transactionSourceSummary);
+      }
+      await testHooks.afterEligibilityRevalidated?.({
+        payrollRunCount: lockedPayrollRunIds.length,
+      });
+
+      let persistedSummary;
+      if (currentSummary) {
+        const updated = await tx.t4Summary.updateMany({
+          where: {
+            id: currentSummary.id,
+            status: { not: T4GenerationStatus.FINALIZED },
+          },
+          data: {
+            employeeCount: slipJobs.length,
+            totalEmploymentIncome: roundMoney(summary.employmentIncome),
+            totalIncomeTaxDeducted: roundMoney(summary.incomeTaxDeducted),
+            totalCppEmployee: roundMoney(summary.cppContributionsEmployee),
+            totalEiEmployee: roundMoney(summary.eiPremiumsEmployee),
+            status: T4GenerationStatus.GENERATED,
+            generatedAt,
+            generationId,
+            generationVersion: T4_GENERATION_VERSION,
+            validationSummary: sourceSummary,
+            validatedAt: generatedAt,
+          },
+        });
+        if (updated.count !== 1) {
+          throw new Error("T4_SUMMARY_CHANGED_CONCURRENTLY");
+        }
+        persistedSummary = await tx.t4Summary.findUniqueOrThrow({
+          where: { id: currentSummary.id },
+        });
+      } else {
+        persistedSummary = await tx.t4Summary.create({
+          data: {
+            companyId,
+            taxYear,
+            employeeCount: slipJobs.length,
+            totalEmploymentIncome: roundMoney(summary.employmentIncome),
+            totalIncomeTaxDeducted: roundMoney(summary.incomeTaxDeducted),
+            totalCppEmployee: roundMoney(summary.cppContributionsEmployee),
+            totalEiEmployee: roundMoney(summary.eiPremiumsEmployee),
+            status: T4GenerationStatus.GENERATED,
+            generatedAt,
+            generationId,
+            generationVersion: T4_GENERATION_VERSION,
+            validationSummary: sourceSummary,
+            validatedAt: generatedAt,
+          },
+        });
+      }
+
+      const finalizedSlipCount = await tx.t4Slip.count({
+        where: { companyId, taxYear, status: T4GenerationStatus.FINALIZED },
+      });
+      if (finalizedSlipCount > 0) {
+        throw new Error("FINALIZED_T4_SLIP_IS_IMMUTABLE");
+      }
+
+      const currentEmployeeIds = slipJobs.map((job) => job.employeeId);
+      const staleSlips = await tx.t4Slip.findMany({
+        where: {
+          companyId,
+          taxYear,
+          employeeId: { notIn: currentEmployeeIds },
+          status: { not: T4GenerationStatus.FINALIZED },
+        },
+        select: { id: true },
+      });
+      if (staleSlips.length > 0) {
+        const staleSlipIds = staleSlips.map((slip) => slip.id);
+        await tx.document.updateMany({
+          where: { t4SlipId: { in: staleSlipIds }, validationStatus: "ACTIVE" },
+          data: {
+            validationStatus: "QUARANTINED",
+            validationReason: "NOT_PRESENT_IN_CURRENT_GENERATION",
+            quarantinedAt: generatedAt,
+          },
+        });
+        await tx.t4Slip.updateMany({
+          where: { id: { in: staleSlipIds } },
+          data: { status: T4GenerationStatus.QUARANTINED, validatedAt: generatedAt },
+        });
+      }
+
+      for (const job of slipJobs) {
+        const currentSlip = await tx.t4Slip.findUnique({
+          where: {
+            companyId_employeeId_taxYear: { companyId, employeeId: job.employeeId, taxYear },
+          },
+        });
+        if (currentSlip?.status === T4GenerationStatus.FINALIZED) {
+          throw new Error("FINALIZED_T4_SLIP_IS_IMMUTABLE");
+        }
+
+        let slip;
+        if (currentSlip) {
+          const updated = await tx.t4Slip.updateMany({
+            where: { id: currentSlip.id, status: { not: T4GenerationStatus.FINALIZED } },
+            data: {
+              status: T4GenerationStatus.GENERATED,
+              ...job.values,
+              generatedAt,
+              summaryId: persistedSummary.id,
+              generationId,
+              generationVersion: T4_GENERATION_VERSION,
+              validatedAt: generatedAt,
+            },
+          });
+          if (updated.count !== 1) throw new Error("T4_SLIP_CHANGED_CONCURRENTLY");
+          slip = await tx.t4Slip.findUniqueOrThrow({ where: { id: currentSlip.id } });
+        } else {
+          slip = await tx.t4Slip.create({
+            data: {
+              companyId,
+              employeeId: job.employeeId,
+              taxYear,
+              status: T4GenerationStatus.GENERATED,
+              ...job.values,
+              generatedAt,
+              summaryId: persistedSummary.id,
+              generationId,
+              generationVersion: T4_GENERATION_VERSION,
+              validatedAt: generatedAt,
+            },
+          });
+        }
+
+        await tx.document.updateMany({
+          where: {
+            t4SlipId: slip.id,
+            documentType: "T4_SLIP",
+            validationStatus: "ACTIVE",
+          },
+          data: {
+            validationStatus: "QUARANTINED",
+            validationReason: "SUPERSEDED_BY_NEW_GENERATION",
+            quarantinedAt: generatedAt,
+          },
+        });
+        const storagePath = slipStoragePaths.get(job.employeeId.toString())!;
+        await tx.document.create({
+          data: {
+            companyId,
+            documentType: "T4_SLIP",
+            fileName: path.basename(storagePath),
+            storagePath,
+            mimeType: "application/pdf",
+            linkedEntityType: "T4_SLIP",
+            linkedEntityId: slip.id,
+            taxYear,
+            t4SlipId: slip.id,
+            validationStatus: "ACTIVE",
+            generationId,
+            generationVersion: T4_GENERATION_VERSION,
+          },
+        });
+      }
+
+      await tx.document.updateMany({
+        where: {
+          t4SummaryId: persistedSummary.id,
+          validationStatus: "ACTIVE",
+          OR: [{ documentType: "T4_SUMMARY" }, { mimeType: "application/xml" }],
+        },
+        data: {
+          validationStatus: "QUARANTINED",
+          validationReason: "SUPERSEDED_BY_NEW_GENERATION",
+          quarantinedAt: generatedAt,
+        },
+      });
+      await tx.document.createMany({
+        data: [
+          {
+            companyId,
+            documentType: "T4_SUMMARY",
+            fileName: path.basename(summaryStoragePath),
+            storagePath: summaryStoragePath,
+            mimeType: "application/pdf",
+            linkedEntityType: "T4_SUMMARY",
+            linkedEntityId: persistedSummary.id,
+            taxYear,
+            t4SummaryId: persistedSummary.id,
+            validationStatus: "ACTIVE",
+            generationId,
+            generationVersion: T4_GENERATION_VERSION,
+          },
+          {
+            companyId,
+            documentType: "OTHER",
+            fileName: path.basename(xmlStoragePath),
+            storagePath: xmlStoragePath,
+            mimeType: "application/xml",
+            linkedEntityType: "T4_SUMMARY",
+            linkedEntityId: persistedSummary.id,
+            taxYear,
+            t4SummaryId: persistedSummary.id,
+            validationStatus: "ACTIVE",
+            generationId,
+            generationVersion: T4_GENERATION_VERSION,
+          },
+        ],
+      });
+      await tx.auditLog.create({
+        data: {
+          companyId,
+          actorType: "SYSTEM",
+          action: "T4_PACKAGE_GENERATED",
+          targetType: "T4Summary",
+          targetId: persistedSummary.id.toString(),
+          metadataJson: {
+            taxYear,
+            employeeCount: slipJobs.length,
+            generationId,
+            generationVersion: T4_GENERATION_VERSION,
+            ...sourceSummary,
+          },
+        },
+      });
+      await testHooks.beforeTransactionCommit?.();
+      return persistedSummary;
+    }, {
+      // The shared advisory lock must be followed by a fresh statement snapshot so a
+      // reversal that committed while this transaction waited is visible here.
+      isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
     });
 
-    await logAudit({
-      companyId,
-      action: "T4_PACKAGE_GENERATED",
-      targetType: "T4Summary",
-      targetId: t4Summary.id.toString(),
-      metadata: { taxYear, employeeCount: byEmployee.size, xmlStoragePath },
-    });
-
+    unpublishedStoragePaths.length = 0;
     return t4Summary;
+  } catch (error) {
+    await Promise.all(
+      unpublishedStoragePaths.map((storagePath) =>
+        fs.unlink(path.join(process.cwd(), storagePath)).catch(() => undefined)
+      )
+    );
+    if (error instanceof T4SourceEligibilityChangedError) {
+      await quarantineT4GenerationFailure({
+        companyId,
+        taxYear,
+        reasonCode: "T4_SOURCE_ELIGIBILITY_CHANGED_DURING_PUBLICATION",
+        metadata: error.sourceSummary,
+      }).catch(() => undefined);
+    } else {
+      await logAudit({
+        companyId,
+        action: "T4_PACKAGE_GENERATION_FAILED",
+        targetType: "Company",
+        targetId: companyId.toString(),
+        metadata: {
+          taxYear,
+          reasonCode: error instanceof CompliancePublicationLockTimeoutError
+            ? error.code
+            : "ARTIFACT_GENERATION_FAILED",
+          retryable: error instanceof CompliancePublicationLockTimeoutError,
+          ...sourceSummary,
+        },
+      }).catch(() => undefined);
+    }
+    throw new Error("T4 package generation failed");
   } finally {
     if (browser) {
       await browser.close();
@@ -1366,10 +2425,15 @@ export async function generateT4Package(companyId: bigint, taxYear: number) {
 }
 
 export async function getCraDashboard(companyId: bigint) {
-  await getOrCreateCompanyPayrollSettings(companyId);
-  await syncRemittancesForCompany(companyId);
-
-  const [settings, remittances, t4Summaries, documents, auditLogs] = await Promise.all([
+  const [
+    settings,
+    remittances,
+    t4Summaries,
+    documents,
+    auditLogs,
+    providerVerification,
+    blockedScope,
+  ] = await Promise.all([
     prisma.companyPayrollSettings.findUnique({ where: { companyId } }),
     prisma.remittance.findMany({
       where: { companyId },
@@ -1397,7 +2461,7 @@ export async function getCraDashboard(companyId: bigint) {
       },
     }),
     prisma.document.findMany({
-      where: { companyId },
+      where: { companyId, validationStatus: "ACTIVE" },
       orderBy: { uploadedAt: "desc" },
       take: 100,
     }),
@@ -1406,19 +2470,56 @@ export async function getCraDashboard(companyId: bigint) {
       orderBy: { createdAt: "desc" },
       take: 100,
     }),
+    getCompanyProviderVerificationFreshness(companyId),
+    getProviderVerificationBlockedScope(companyId),
   ]);
 
-  const nextDue = remittances.find((item) => item.status !== RemittanceStatus.PAID) ?? null;
-  const overdueCount = remittances.filter((item) => item.status === RemittanceStatus.OVERDUE).length;
-  const outstandingTotal = remittances
-    .filter((item) => item.status !== RemittanceStatus.PAID)
+  const effectiveRemittances = remittances.map((remittance) =>
+    blockedScope.remittanceIds.has(remittance.id)
+      ? { ...remittance, status: RemittanceStatus.REVIEW_REQUIRED }
+      : remittance
+  );
+
+  const nextDue = effectiveRemittances.find((item) =>
+    item.status !== RemittanceStatus.PAID && item.status !== RemittanceStatus.REVIEW_REQUIRED
+  ) ?? null;
+  const overdueCount = effectiveRemittances.filter(
+    (item) => item.status === RemittanceStatus.OVERDUE
+  ).length;
+  const outstandingTotal = effectiveRemittances
+    .filter((item) =>
+      item.status !== RemittanceStatus.PAID && item.status !== RemittanceStatus.REVIEW_REQUIRED
+    )
     .reduce((sum, item) => sum.add(item.totalPayable), ZERO);
 
   return {
     settings,
-    remittances,
+    remittances: effectiveRemittances,
     t4Summaries,
-    documents: selectDashboardDocuments(documents).slice(0, 12),
+    documents: selectDashboardDocuments(
+      documents.filter((document) => !blockedScope.documentIds.has(document.id))
+    ).slice(0, 12),
+    providerVerification: {
+      eligiblePaidRunCount: providerVerification.eligiblePaidRunCount,
+      successfullyVerifiedWithinSlaCount:
+        providerVerification.successfullyVerifiedWithinSlaCount,
+      neverSuccessfullyVerifiedCount:
+        providerVerification.neverSuccessfullyVerifiedCount,
+      staleVerificationCount: providerVerification.staleVerificationCount,
+      evidenceVersionMismatchCount: providerVerification.evidenceVersionMismatchCount,
+      unresolvedFailureCount: providerVerification.unresolvedFailureCount,
+      unverifiedStatusCount: providerVerification.unverifiedStatusCount,
+      providerReferenceMissingCount: providerVerification.providerReferenceMissingCount,
+      legacyUnverifiedCount: providerVerification.legacyUnverifiedCount,
+      unverifiedReasonCounts: providerVerification.unverifiedReasonCounts,
+      reviewRequired:
+        providerVerification.neverSuccessfullyVerifiedCount > 0 ||
+        providerVerification.staleVerificationCount > 0 ||
+        providerVerification.evidenceVersionMismatchCount > 0 ||
+        providerVerification.unverifiedStatusCount > 0 ||
+        providerVerification.providerReferenceMissingCount > 0,
+      blockedDocumentCount: blockedScope.documentIds.size,
+    },
     auditLogs: selectDashboardAuditLogs(auditLogs).slice(0, 12),
     nextDue,
     overdueCount,

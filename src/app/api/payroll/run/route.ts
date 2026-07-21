@@ -1,27 +1,11 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
-import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { calculatePayrollAmounts } from "@/lib/payroll/calculatePayroll";
 import { requirePayrollApiAuth } from "@/lib/payroll-api-auth";
 import { sendPayrollRunToTrolley } from "@/lib/payments/trolley-payroll";
-
-const itemSchema = z.object({
-  employeeId: z.string().min(1),
-  hoursWorked: z.number().nullable(),
-  overtime: z.number(),
-  holidayHours: z.number(),
-  includeVacation: z.boolean(),
-});
-
-const runSchema = z.object({
-  items: z.array(itemSchema).min(1),
-  payDate: z.string().min(1),
-  periodStart: z.string().min(1),
-  periodEnd: z.string().min(1),
-  sendAt: z.string().min(1),
-  timezone: z.string().min(1),
-});
+import { serializeUtcDateOnly } from "@/lib/date-only";
+import { payrollRunInputSchema } from "@/lib/payroll/payroll-run-input";
 
 export async function POST(req: Request) {
   try {
@@ -38,18 +22,35 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    const parsed = runSchema.safeParse(json);
+    const parsed = payrollRunInputSchema.safeParse(json);
     if (!parsed.success) {
       return NextResponse.json(
-        { error: "Validation failed", issues: parsed.error.issues },
+        { error: "Validation failed" },
         { status: 400 }
       );
     }
 
     const { items, payDate, periodStart, periodEnd, sendAt, timezone } = parsed.data;
+    const employeeIds = items.map((item) => BigInt(item.employeeId));
+    const employees = await prisma.employee.findMany({
+      where: { id: { in: employeeIds }, companyId: auth.company.id },
+      select: {
+        id: true,
+        payType: true,
+        hourlyRate: true,
+        salary: true,
+        payGroup: true,
+        vacationPay: true,
+        federalTD1: true,
+        provincialTD1: true,
+      },
+    });
+    if (employees.length !== employeeIds.length) {
+      return NextResponse.json({ error: "Validation failed" }, { status: 400 });
+    }
+    const employeesById = new Map(employees.map((employee) => [employee.id.toString(), employee]));
 
     const payrollRun = await prisma.$transaction(async (tx) => {
-      const employeeIds = items.map((item) => BigInt(item.employeeId));
       const employeeCount = await tx.employee.count({
         where: {
           id: { in: employeeIds },
@@ -57,43 +58,30 @@ export async function POST(req: Request) {
         },
       });
       if (employeeCount !== employeeIds.length) {
-        throw new Error("One or more selected employees do not belong to this company.");
+        throw new Error("PAYROLL_INPUT_CHANGED_BEFORE_COMMIT");
       }
 
       const createdRun = await tx.payrollRun.create({
         data: {
           companyId: auth.company.id,
-          payDate: new Date(payDate),
-          sendAt: new Date(sendAt),
+          payDate,
+          sendAt,
           status: "SCHEDULED" ,
           meta: {
             employeeIds: items.map((item) => item.employeeId),
-            periodStart,
-            periodEnd,
+            periodStart: serializeUtcDateOnly(periodStart),
+            periodEnd: serializeUtcDateOnly(periodEnd),
             timezone,
-            sendAt,
+            sendAt: sendAt.toISOString(),
           } as Prisma.InputJsonValue,
         },
       });
 
       for (const it of items) {
-        const empIdBig = BigInt(it.employeeId);
-        const emp = await tx.employee.findUnique({
-          where: { id: empIdBig, companyId: auth.company.id },
-          select: {
-            id: true,
-            payType: true,
-            hourlyRate: true,
-            salary: true,
-            payGroup: true,
-            vacationPay: true,
-            federalTD1: true,
-            provincialTD1: true,
-          },
-        });
+        const emp = employeesById.get(it.employeeId);
 
         if (!emp) {
-          throw new Error(`Unknown employee: ${it.employeeId}`);
+          throw new Error("PAYROLL_INPUT_CHANGED_BEFORE_COMMIT");
         }
 
         const amounts = calculatePayrollAmounts({
@@ -114,9 +102,9 @@ export async function POST(req: Request) {
           data: {
             employeeId: emp.id,
             payrollRunId: createdRun.id,
-            payDate: new Date(payDate),
-            periodStart: new Date(periodStart),
-            periodEnd: new Date(periodEnd),
+            payDate,
+            periodStart,
+            periodEnd,
             hoursWorked: emp.payType === "HOURLY" ? Number(it.hoursWorked ?? 0) : null,
             grossPay: amounts.grossPay,
             ded_cpp: amounts.ded_cpp,
@@ -142,15 +130,13 @@ export async function POST(req: Request) {
     });
 
     let trolleyResult: { sent: boolean; batchId?: string; error?: string } = { sent: false };
-    const sendAtDate = new Date(sendAt);
-    if (sendAtDate <= new Date()) {
+    if (sendAt <= new Date()) {
       try {
         const result = await sendPayrollRunToTrolley(payrollRun.id, { enforceDue: true });
         trolleyResult = { sent: true, batchId: result.batchId };
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : "Unknown error";
-        console.error("Failed to send payroll run to Trolley immediately", JSON.stringify(error, Object.getOwnPropertyNames(error)));
-        trolleyResult = { sent: false, error: msg };
+      } catch {
+        console.error("Immediate payroll provider dispatch failed");
+        trolleyResult = { sent: false, error: "Provider dispatch failed" };
       }
     }
 

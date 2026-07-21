@@ -1,0 +1,23 @@
+{
+  "ok": true,
+  "payment": {
+    "id": "P-contract-fixture",
+    "status": "processed",
+    "sourceAmount": "1620.00",
+    "targetAmount": "1620.00",
+    "processedAt": "2026-01-16T11:00:00.000Z",
+    "updatedAt": "2026-01-16T11:00:00.000Z",
+    "sourceCurrency": "CAD",
+    "targetCurrency": "CAD",
+    "currency": "CAD",
+    "batch": {
+      "id": "B-contract-fixture",
+      "completedAt": "2026-01-16T11:00:01.000Z"
+    },
+    "externalId": "__EXPECTED_PAY_HISTORY_EXTERNAL_ID__",
+    "failureMessage": null,
+    "returnedAmount": "0.00",
+    "returnedAt": null,
+    "returnedReason": []
+  }
+}

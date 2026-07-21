@@ -3,6 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 import { markRemittancePaidAction } from "../../actions";
 import PlanRequiredButton from "@/app/components/PlanRequiredButton";
+import {
+  CRA_OPERATIONAL_TIME_ZONE,
+  formatUtcDateOnly,
+  getTodayUtcDateOnly,
+  serializeUtcDateOnly,
+} from "@/lib/date-only";
+import { getProviderVerificationBlockedScope } from "@/lib/payments/provider-verification";
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("en-CA", {
@@ -12,10 +19,19 @@ function formatMoney(value: number) {
 }
 
 function formatDate(value: Date) {
+  return formatUtcDateOnly(value, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatInstantDate(value: Date) {
   return new Intl.DateTimeFormat("en-CA", {
     month: "short",
     day: "numeric",
     year: "numeric",
+    timeZone: CRA_OPERATIONAL_TIME_ZONE,
   }).format(value);
 }
 
@@ -42,7 +58,7 @@ function getUniqueRecordedPayments<
 
   return payments.filter((payment) => {
     const key = [
-      payment.paymentDate.toISOString().slice(0, 10),
+      serializeUtcDateOnly(payment.paymentDate),
       payment.amountPaid.toNumber().toFixed(2),
     ].join(":");
 
@@ -63,7 +79,8 @@ export default async function RemittanceDetailPage({
   const company = await requireCompanyAdminOrRedirect();
   const { id } = await params;
 
-  const remittance = await prisma.remittance.findFirst({
+  const [remittance, blockedScope] = await Promise.all([
+    prisma.remittance.findFirst({
     where: {
       id: BigInt(id),
       companyId: company.id,
@@ -88,12 +105,18 @@ export default async function RemittanceDetailPage({
         },
       },
       documents: {
+        where: { validationStatus: "ACTIVE" },
         orderBy: { uploadedAt: "desc" },
       },
     },
-  });
+    }),
+    getProviderVerificationBlockedScope(company.id),
+  ]);
 
   if (!remittance) notFound();
+  const visibleDocuments = remittance.documents.filter(
+    (document) => !blockedScope.documentIds.has(document.id)
+  );
 
   const recordedPayments = getUniqueRecordedPayments(remittance.payments);
   const totalPaid = roundCurrency(
@@ -101,7 +124,10 @@ export default async function RemittanceDetailPage({
   );
   const totalPayable = remittance.totalPayable.toNumber();
   const outstandingBalance = roundCurrency(Math.max(totalPayable - totalPaid, 0));
-  const isPaidInFull = outstandingBalance === 0 && recordedPayments.length > 0;
+  const requiresReview =
+    remittance.status === "REVIEW_REQUIRED" || blockedScope.remittanceIds.has(remittance.id);
+  const displayStatus = requiresReview ? "REVIEW_REQUIRED" : remittance.status;
+  const isPaidInFull = !requiresReview && outstandingBalance === 0 && recordedPayments.length > 0;
   const breakdownMultiplier = totalPayable > 0 ? outstandingBalance / totalPayable : 0;
 
   return (
@@ -114,13 +140,15 @@ export default async function RemittanceDetailPage({
               {formatDate(remittance.periodStart)} to {formatDate(remittance.periodEnd)}
             </h2>
             <p className="mt-2 text-sm text-gray-600">
-              {isPaidInFull
+              {requiresReview
+                ? "This period has no currently eligible payroll source. Its prior report is quarantined and recorded payment evidence is preserved for manual review."
+                : isPaidInFull
                 ? `Paid in full. Original remittance was ${formatMoney(totalPayable)}.`
                 : `Outstanding balance is ${formatMoney(outstandingBalance)} out of ${formatMoney(totalPayable)} due by ${formatDate(remittance.dueDate)}.`}
             </p>
           </div>
           <div className="rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-700">
-            Status: <span className="font-semibold text-gray-900">{formatStatusLabel(remittance.status)}</span>
+            Status: <span className="font-semibold text-gray-900">{formatStatusLabel(displayStatus)}</span>
           </div>
         </div>
       </section>
@@ -129,7 +157,9 @@ export default async function RemittanceDetailPage({
         <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
           <h3 className="text-lg font-semibold text-gray-900">CRA amount breakdown</h3>
           <p className="mt-2 text-sm text-gray-600">
-            This section shows the remaining balance after recorded payments.
+            {requiresReview
+              ? "These are the preserved totals from the last published report. They are excluded from dashboard payable totals until reconciliation is approved."
+              : "This section shows the remaining balance after recorded payments."}
           </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl bg-gray-50 p-4">
@@ -190,16 +220,18 @@ export default async function RemittanceDetailPage({
         <div className="space-y-6">
           <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
             <h3 className="text-lg font-semibold text-gray-900">
-              {isPaidInFull ? "Payment completed" : totalPaid > 0 ? "Record another payment" : "Mark payment as complete"}
+              {requiresReview ? "Reconciliation required" : isPaidInFull ? "Payment completed" : totalPaid > 0 ? "Record another payment" : "Mark payment as complete"}
             </h3>
             <p className="mt-2 text-sm text-gray-600">
-              {isPaidInFull
+              {requiresReview
+                ? "Payment recording is disabled until an authorized reviewer reconciles the payroll source and existing payment evidence."
+                : isPaidInFull
                 ? "This remittance has been paid in full. You can review the recorded payment history below."
                 : totalPaid > 0
                   ? `A partial payment has already been recorded. Enter the next payment against the remaining ${formatMoney(outstandingBalance)}.`
                   : "Use this after you pay CRA outside the app. This keeps your dashboard accurate."}
             </p>
-            {!isPaidInFull ? (
+            {!isPaidInFull && !requiresReview ? (
               <form action={markRemittancePaidAction} className="mt-4 space-y-3">
                 <input type="hidden" name="remittanceId" value={remittance.id.toString()} />
                 <label className="block">
@@ -207,7 +239,7 @@ export default async function RemittanceDetailPage({
                   <input
                     type="date"
                     name="paymentDate"
-                    defaultValue={new Date().toISOString().slice(0, 10)}
+                    defaultValue={serializeUtcDateOnly(getTodayUtcDateOnly())}
                     className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm"
                   />
                 </label>
@@ -296,11 +328,11 @@ export default async function RemittanceDetailPage({
         <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
           <h3 className="text-lg font-semibold text-gray-900">Documents</h3>
           <div className="mt-4 space-y-3">
-            {remittance.documents.map((document) => (
+            {visibleDocuments.map((document) => (
               <div key={document.id.toString()} className="flex items-center justify-between gap-4 rounded-2xl bg-gray-50 px-4 py-3">
                 <div>
                   <p className="text-sm font-medium text-gray-900">{document.fileName}</p>
-                  <p className="mt-1 text-xs text-gray-500">{formatDate(document.uploadedAt)}</p>
+                  <p className="mt-1 text-xs text-gray-500">{formatInstantDate(document.uploadedAt)}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   {canPreviewDocument(document) ? (
@@ -322,8 +354,8 @@ export default async function RemittanceDetailPage({
                 </div>
               </div>
             ))}
-            {remittance.documents.length === 0 ? (
-              <p className="text-sm text-gray-500">Generated remittance reports will appear here.</p>
+            {visibleDocuments.length === 0 ? (
+              <p className="text-sm text-amber-800">REVIEW REQUIRED — no currently validated provider-backed report is downloadable.</p>
             ) : null}
           </div>
         </div>
