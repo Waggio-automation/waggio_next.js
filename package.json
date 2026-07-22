@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:tunnel": "concurrently -n next,ngrok -c blue,magenta \"next dev\" \"ngrok http 3000\"",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
     "test": "node --test --experimental-strip-types src/tests/cra-settings-validators.test.ts src/tests/cron-security.test.ts src/tests/date-only.test.ts src/tests/date-validation.test.ts src/tests/sin-security.test.ts src/tests/status-mapping.test.ts src/tests/trolley-timeout.test.ts src/tests/workflow-removal.test.ts",
