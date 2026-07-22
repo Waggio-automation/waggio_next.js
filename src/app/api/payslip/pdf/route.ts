@@ -14,7 +14,7 @@ type PdfRequestBody = {
 // without PDF_SERVER_URL falls back to on-machine puppeteer.
 async function renderPdf(html: string, payHistoryId: string): Promise<Buffer | null> {
   if (process.env.PDF_SERVER_URL && process.env.PDF_SERVER_SECRET) {
-    const pdfResponse = await fetch(`${process.env.PDF_SERVER_URL}/pdf`, {
+    const pdfResponse = await fetch(`${process.env.PDF_SERVER_URL}/generate-pdf`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
