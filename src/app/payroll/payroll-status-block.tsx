@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { PAYROLL_STATUS_LABELS } from "@/lib/payments/payroll-status";
+import { compareUtcDateOnly, getTodayUtcDateOnly } from "@/lib/date-only";
 
 type RunRow = {
   id: string;
@@ -25,7 +26,6 @@ type RunRow = {
   }>;
 };
 
-const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_DEFAULT_COMPLETED_RUNS = 3;
 
 function isHideableCompletedStatus(status: RunRow["status"]) {
@@ -84,9 +84,9 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
         if (!run.sendAtIso) return true;
         return new Date(run.sendAtIso).getTime() > now;
       }
-      const payDateMs = new Date(run.payDateIso).getTime();
-      if (Number.isNaN(payDateMs)) return true;
-      return payDateMs <= now && now - payDateMs < ONE_DAY_MS;
+      const payDate = new Date(run.payDateIso);
+      if (Number.isNaN(payDate.getTime())) return true;
+      return compareUtcDateOnly(payDate, getTodayUtcDateOnly(new Date(now))) === 0;
     })
     .slice(0, MAX_DEFAULT_COMPLETED_RUNS);
   const visibleRuns = showCompletedRuns

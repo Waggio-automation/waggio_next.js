@@ -2,8 +2,18 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 import { getMissingT4FilingSettings } from "@/lib/cra";
+import { getT4SlipDocumentLabel, getT4SummaryDisplayStatus } from "@/lib/t4-artifact-policy";
 import { generateT4Action } from "../actions";
 import PlanRequiredButton from "@/app/components/PlanRequiredButton";
+import {
+  CRA_OPERATIONAL_TIME_ZONE,
+  getDateOnlyCalendarYear,
+  getTodayUtcDateOnly,
+} from "@/lib/date-only";
+import {
+  getCompanyProviderVerificationFreshness,
+  getProviderVerificationBlockedDocumentIds,
+} from "@/lib/payments/provider-verification";
 
 type SummaryDocument = {
   id: bigint;
@@ -25,6 +35,7 @@ function formatDate(value: Date | null) {
     month: "short",
     day: "numeric",
     year: "numeric",
+    timeZone: CRA_OPERATIONAL_TIME_ZONE,
   }).format(value);
 }
 
@@ -62,17 +73,18 @@ function getVisibleSummaryDocuments(documents: SummaryDocument[]) {
 
 export default async function T4ManagementPage() {
   const company = await requireCompanyAdminOrRedirect();
-  const currentYear = new Date().getFullYear();
+  const currentYear = getDateOnlyCalendarYear(getTodayUtcDateOnly());
   const missingSettings = await getMissingT4FilingSettings(company.id);
   const t4Ready = missingSettings.length === 0;
   const hasSelectedPlan = Boolean(company.currentPlan);
 
-  const [summaries, slips] = await Promise.all([
+  const [summaries, slips, providerVerification, blockedDocumentIds] = await Promise.all([
     prisma.t4Summary.findMany({
       where: { companyId: company.id },
       orderBy: [{ taxYear: "desc" }],
       include: {
         documents: {
+          where: { validationStatus: "ACTIVE" },
           orderBy: { uploadedAt: "desc" },
         },
       },
@@ -89,15 +101,40 @@ export default async function T4ManagementPage() {
           },
         },
         documents: {
+          where: { validationStatus: "ACTIVE" },
           orderBy: { uploadedAt: "desc" },
           take: 1,
         },
       },
     }),
+    getCompanyProviderVerificationFreshness(company.id),
+    getProviderVerificationBlockedDocumentIds(company.id),
   ]);
+  const visibleSummaries = summaries.map((summary) => ({
+    ...summary,
+    documents: summary.documents.filter((document) => !blockedDocumentIds.has(document.id)),
+  }));
+  const visibleSlips = slips.map((slip) => ({
+    ...slip,
+    documents: slip.documents.filter((document) => !blockedDocumentIds.has(document.id)),
+  }));
+  const providerEvidenceReviewRequired =
+    providerVerification.neverSuccessfullyVerifiedCount > 0 ||
+    providerVerification.staleVerificationCount > 0 ||
+    providerVerification.evidenceVersionMismatchCount > 0 ||
+    providerVerification.unverifiedStatusCount > 0 ||
+    providerVerification.providerReferenceMissingCount > 0;
 
   return (
     <div className="space-y-6">
+      {providerEvidenceReviewRequired ? (
+        <section className="rounded-3xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-950">
+          <p className="font-semibold">REVIEW REQUIRED — provider evidence is stale or unverified</p>
+          <p className="mt-1">
+            Unverified status: {providerVerification.unverifiedStatusCount}. Never verified: {providerVerification.neverSuccessfullyVerifiedCount}. Missing provider reference: {providerVerification.providerReferenceMissingCount}. Stale: {providerVerification.staleVerificationCount}. Outdated contract: {providerVerification.evidenceVersionMismatchCount}. Affected CRA downloads are blocked.
+          </p>
+        </section>
+      ) : null}
       <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -151,9 +188,13 @@ export default async function T4ManagementPage() {
               </tr>
             </thead>
             <tbody>
-              {summaries.map((summary) => (
+              {visibleSummaries.map((summary) => (
                 (() => {
                   const visibleDocuments = getVisibleSummaryDocuments(summary.documents);
+                  const displayStatus = getT4SummaryDisplayStatus(
+                    summary.status,
+                    visibleDocuments.length
+                  );
 
                   return (
                     <tr key={summary.id.toString()} className="border-b border-gray-100 last:border-0">
@@ -165,7 +206,7 @@ export default async function T4ManagementPage() {
                       <td className="py-3 pr-3 text-gray-700">
                         {formatMoney(summary.totalIncomeTaxDeducted.toNumber())}
                       </td>
-                      <td className="py-3 pr-3 text-gray-700">{summary.status}</td>
+                      <td className="py-3 pr-3 text-gray-700">{displayStatus}</td>
                       <td className="py-3 pr-3 text-gray-700">{formatDate(summary.generatedAt)}</td>
                       <td className="py-3 text-gray-700">
                         <div className="flex flex-wrap gap-2">
@@ -185,7 +226,7 @@ export default async function T4ManagementPage() {
                   );
                 })()
               ))}
-              {summaries.length === 0 ? (
+              {visibleSummaries.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-8 text-center text-sm text-gray-500">
                     No T4 summary has been generated yet.
@@ -213,7 +254,7 @@ export default async function T4ManagementPage() {
               </tr>
             </thead>
             <tbody>
-              {slips.map((slip) => (
+              {visibleSlips.map((slip) => (
                 <tr key={slip.id.toString()} className="border-b border-gray-100 last:border-0">
                   <td className="py-3 pr-3 text-gray-900">
                     {slip.employee.firstName} {slip.employee.lastName}
@@ -237,10 +278,10 @@ export default async function T4ManagementPage() {
                         href={`/api/documents/${slip.documents[0].id.toString()}`}
                         className="rounded-full border border-gray-300 px-3 py-1 text-xs font-medium text-gray-900 hover:bg-gray-50"
                       >
-                        Download PDF
+                        {getT4SlipDocumentLabel(slip.status, true)}
                       </a>
                     ) : (
-                      "No file"
+                      getT4SlipDocumentLabel(slip.status, false)
                     )}
                   </td>
                 </tr>

@@ -5,6 +5,8 @@ import PaymentStatusCard from "./payment-status-card";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 import PlanRequiredButton from "@/app/components/PlanRequiredButton";
 import AddressAutocompleteFields from "@/app/components/AddressAutocompleteFields";
+import { serializeUtcDateOnly } from "@/lib/date-only";
+import { maskStoredSinForDisplay } from "@/lib/sin";
 
 function toUiPayoutStatus(status: string) {
   switch (status) {
@@ -22,7 +24,7 @@ function toUiPayoutStatus(status: string) {
 }
 
 function formatDateInput(date: Date) {
-  return date.toISOString().slice(0, 10);
+  return serializeUtcDateOnly(date);
 }
 
 export default async function EmployeeDetailPage({
@@ -30,11 +32,11 @@ export default async function EmployeeDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ updated?: string }>;
+  searchParams?: Promise<{ updated?: string; error?: string }>;
 }) {
   const { id } = await params;
   const resolvedSearchParams = await (searchParams ??
-    Promise.resolve({} as { updated?: string }));
+    Promise.resolve({} as { updated?: string; error?: string }));
   const company = await requireCompanyAdminOrRedirect();
   const hasProPlan = company.currentPlan === "PRO";
 
@@ -75,6 +77,7 @@ export default async function EmployeeDetailPage({
       bonus: true,
       federalTD1: true,
       provincialTD1: true,
+      sin: true,
       dentalBenefitsCoverage: true,
       rppDpspRegistrationNumber: true,
       pensionAdjustmentOverride: true,
@@ -89,6 +92,8 @@ export default async function EmployeeDetailPage({
     notFound();
   }
 
+  const maskedSin = maskStoredSinForDisplay(employee.sin, { revealLastThree: true });
+
   const fieldClassName =
     "w-full rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-gray-500";
   const labelClassName = "flex flex-col gap-2 text-sm text-gray-700";
@@ -101,6 +106,11 @@ export default async function EmployeeDetailPage({
 
   return (
     <main className="max-w-4xl mx-auto p-6 space-y-6">
+      {resolvedSearchParams.error === "invalid-date" ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
+          Enter birth and hire dates in valid YYYY-MM-DD format.
+        </div>
+      ) : null}
       {successMessage ? (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
           {successMessage}
@@ -348,6 +358,10 @@ export default async function EmployeeDetailPage({
             <p className="text-sm text-gray-600">
               Manage year-end filing details here instead of entering CRA box codes directly.
             </p>
+          </div>
+
+          <div className="rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-600">
+            SIN on file: <span className="font-medium text-gray-900">{maskedSin}</span>
           </div>
 
           <form action={updateEmployeeCraProfileAction} className="grid gap-4 md:grid-cols-2">

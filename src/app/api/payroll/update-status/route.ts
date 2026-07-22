@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { PayHistoryStatus, Prisma } from "@prisma/client";
 import { requirePayrollApiAuth } from "@/lib/payroll-api-auth";
+import { z } from "zod";
+import { instantStringSchema, utcDateOnlySchema } from "@/lib/validation/date-only";
+import { serializeUtcDateOnly } from "@/lib/date-only";
 
 type ScheduleBody = {
   employeeIds: (string | number)[];
@@ -25,6 +28,23 @@ type UpdateBody = {
   timezone?: string | null;
   meta?: Record<string, unknown>;
 };
+
+const scheduleInputSchema = z.object({
+  employeeIds: z.array(z.union([z.string(), z.number()])).min(1).refine(
+    (values) => values.every((value) => /^\d+$/.test(String(value))),
+    "Invalid employee IDs"
+  ),
+  payDate: utcDateOnlySchema,
+  periodStart: utcDateOnlySchema.nullish(),
+  periodEnd: utcDateOnlySchema.nullish(),
+  sendAt: instantStringSchema.nullish(),
+  timezone: z.string().nullish(),
+  meta: z.record(z.string(), z.unknown()).optional(),
+}).superRefine((data, ctx) => {
+  if (data.periodStart && data.periodEnd && data.periodStart > data.periodEnd) {
+    ctx.addIssue({ code: "custom", path: ["periodEnd"], message: "Invalid payroll period" });
+  }
+});
 
 async function safeJson<T = unknown>(req: Request): Promise<T> {
   try {
@@ -61,14 +81,27 @@ export async function POST(req: Request) {
         : undefined);
 
     if (schedule) {
-      const { sendAt, ...scheduleMeta } = schedule;
+      const parsedSchedule = scheduleInputSchema.safeParse(schedule);
+      if (!parsedSchedule.success) {
+        return NextResponse.json({ error: "Validation failed" }, { status: 400 });
+      }
+      const { sendAt, ...scheduleMeta } = parsedSchedule.data;
       const payrollRun = await prisma.payrollRun.create({
         data: {
           companyId: auth.company.id,
-          payDate: new Date(schedule.payDate),
-          sendAt: sendAt ? new Date(sendAt) : null,
+          payDate: parsedSchedule.data.payDate,
+          sendAt: sendAt ?? null,
           status: "SCHEDULED",
-          meta: scheduleMeta as Prisma.InputJsonValue,
+          meta: {
+            ...scheduleMeta,
+            payDate: serializeUtcDateOnly(parsedSchedule.data.payDate),
+            periodStart: parsedSchedule.data.periodStart
+              ? serializeUtcDateOnly(parsedSchedule.data.periodStart)
+              : null,
+            periodEnd: parsedSchedule.data.periodEnd
+              ? serializeUtcDateOnly(parsedSchedule.data.periodEnd)
+              : null,
+          } as Prisma.InputJsonValue,
         },
       });
 

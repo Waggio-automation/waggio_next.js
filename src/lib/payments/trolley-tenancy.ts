@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { prisma } from "../prisma.ts";
 
 type TrolleyTenantContext = {
   companyId: bigint;

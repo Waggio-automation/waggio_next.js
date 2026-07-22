@@ -11,6 +11,7 @@ import {
   updateCompanyPayrollSettings,
 } from "@/lib/cra";
 import { craSettingsInputSchema } from "./validators";
+import { getDateOnlyCalendarYear, getTodayUtcDateOnly } from "@/lib/date-only";
 
 function asString(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value : "";
@@ -79,7 +80,7 @@ export async function markRemittancePaidAction(formData: FormData) {
   await recordRemittancePayment({
     companyId: company.id,
     remittanceId: BigInt(asString(formData.get("remittanceId"))),
-    paymentDate: new Date(asString(formData.get("paymentDate"))),
+    paymentDate: asString(formData.get("paymentDate")),
     amountPaid: Number(asString(formData.get("amountPaid")) || 0),
     paymentMethod: asString(formData.get("paymentMethod")) || null,
     referenceNumber: asString(formData.get("referenceNumber")) || null,
@@ -94,7 +95,10 @@ export async function markRemittancePaidAction(formData: FormData) {
 export async function generateT4Action(formData: FormData) {
   const company = await requireCompanyAdminOrRedirect();
   requireProPlan(company);
-  const taxYear = Number(asString(formData.get("taxYear")) || new Date().getFullYear());
+  const taxYear = Number(
+    asString(formData.get("taxYear")) ||
+      getDateOnlyCalendarYear(getTodayUtcDateOnly())
+  );
   const missingSettings = await getMissingT4FilingSettings(company.id);
 
   if (missingSettings.length > 0) {

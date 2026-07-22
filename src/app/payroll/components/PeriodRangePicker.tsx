@@ -3,18 +3,15 @@
 import { useState, useRef, useEffect } from "react"; // 1. useRef, useEffect 추가
 import { DayPicker, DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
+import { parseUtcDateOnly, serializeUtcDateOnly } from "@/lib/date-only";
 
 function fmtDate(d: Date) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const da = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${da}`;
+  return serializeUtcDateOnly(d);
 }
 
 function parseYmd(s: string | undefined) {
   if (!s) return undefined;
-  const [y, m, d] = s.split("-").map(Number);
-  return new Date(y, m - 1, d);
+  return parseUtcDateOnly(s);
 }
 
 export default function PeriodRangePicker({
@@ -95,6 +92,7 @@ export default function PeriodRangePicker({
               onSelect={handleSelect}
               numberOfMonths={2}
               showOutsideDays
+              timeZone="UTC"
             />
             <div className="mt-3 flex justify-end gap-2">
               <button

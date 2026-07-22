@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
-import { prisma } from "@/lib/prisma";
+import { getDownloadableDocument } from "@/lib/document-access";
 
 export const runtime = "nodejs";
 
@@ -21,18 +21,16 @@ export async function GET(
     return NextResponse.json({ error: "Invalid document id" }, { status: 400 });
   }
 
-  const document = await prisma.document.findFirst({
-    where: {
-      id: documentId,
-      companyId: company.id,
-    },
-  });
+  const document = await getDownloadableDocument(company.id, documentId);
 
   if (!document) {
     return NextResponse.json({ error: "Document not found" }, { status: 404 });
   }
 
-  const filePath = path.join(process.cwd(), document.storagePath);
+  const filePath = path.resolve(process.cwd(), document.storagePath);
+  if (!filePath.startsWith(`${process.cwd()}${path.sep}`)) {
+    return NextResponse.json({ error: "Document not found" }, { status: 404 });
+  }
   let fileBuffer: Buffer;
   try {
     fileBuffer = await fs.readFile(filePath);

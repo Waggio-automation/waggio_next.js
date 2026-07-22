@@ -1,6 +1,7 @@
 import Stripe from "stripe";
 import { type Company, type CompanyPlan } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getDateOnlyParts, getUtcDateOnlyMonthRange } from "@/lib/date-only";
 
 const BASE_MONTHLY_PRICE: Record<CompanyPlan, number> = {
   BASIC: 1900,
@@ -64,7 +65,8 @@ function getPlanDisplayName(plan: CompanyPlan) {
 }
 
 function getBillingMonthKey(date: Date) {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+  const { year, monthIndex } = getDateOnlyParts(date);
+  return `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
 }
 
 function normalizeCurrentPeriodEnd(unixSeconds: number | null | undefined) {
@@ -535,12 +537,13 @@ export async function billExtraPayrollRunIfNeeded(payrollRunId: bigint) {
 
   const plan = run.company.currentPlan;
   const monthKey = getBillingMonthKey(run.payDate);
+  const billingMonthRange = getUtcDateOnlyMonthRange(run.payDate);
   const candidateRuns = await prisma.payrollRun.findMany({
     where: {
       companyId: run.companyId,
       payDate: {
-        gte: new Date(Date.UTC(run.payDate.getUTCFullYear(), run.payDate.getUTCMonth(), 1)),
-        lt: new Date(Date.UTC(run.payDate.getUTCFullYear(), run.payDate.getUTCMonth() + 1, 1)),
+        gte: billingMonthRange.start,
+        lt: billingMonthRange.endExclusive,
       },
       status: {
         in: ["PAYING", "PAID"],

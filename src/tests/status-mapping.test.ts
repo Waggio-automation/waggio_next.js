@@ -51,10 +51,21 @@ test("mapExternalPaymentEventToInternal maps payment failures", () => {
   assert.equal(mapped.payrollRun?.failureReason, "recipient account rejected");
 });
 
-test("mapExternalPaymentEventToInternal maps payment paid to paid status", () => {
+test("mapExternalPaymentEventToInternal maps Trolley payment processed to paid lifecycle", () => {
   const mapped = mapExternalPaymentEventToInternal({
-    type: "payment.paid",
+    type: "payment.processed",
   });
 
   assert.equal(mapped.payrollRun?.status, "paid");
+});
+
+test("payment paid is not confused with the Trolley payment contract", () => {
+  const mapped = mapExternalPaymentEventToInternal({ type: "payment.paid" });
+  assert.deepEqual(mapped, {});
+});
+
+test("returned Trolley payment maps to employee payment failure", () => {
+  const mapped = mapExternalPaymentEventToInternal({ type: "payment.returned" });
+  assert.equal(mapped.payrollRun?.status, "failed");
+  assert.equal(mapped.payrollRun?.failureType, "employee");
 });
