@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/payroll-revalidate-paid",
-      "schedule": "*/15 * * * *"
+      "schedule": "0 14 * * *"
     }
   ]
 }
