@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 import { getCraDashboard } from "@/lib/cra";
 import WorkspaceNav from "@/app/components/WorkspaceNav";
+import { formatUtcDateOnly } from "@/lib/date-only";
 
 function getSetupMessage(setup: string | undefined) {
   if (setup === "account_created") {
@@ -158,7 +159,7 @@ export default async function HomePage({
               </p>
               <p className="text-gray-600">
                 {craDashboard.nextDue
-                  ? `Next CRA payment due ${new Date(craDashboard.nextDue.dueDate).toLocaleDateString()}`
+                  ? `Next CRA payment due ${formatUtcDateOnly(craDashboard.nextDue.dueDate)}`
                   : "No open remittance yet"}
               </p>
               <Link
@@ -222,7 +223,7 @@ export default async function HomePage({
                   <td className="p-3 text-gray-700">{e.employmentType}</td>
                   <td className="p-3 text-gray-700">{e.payType}</td>
                   <td className="p-3 pr-6 text-gray-700">
-                    {new Date(e.hireDate).toLocaleDateString()}
+                    {formatUtcDateOnly(e.hireDate)}
                   </td>
                   <td className="p-3 pr-6">
                     <Link

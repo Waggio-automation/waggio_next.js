@@ -5,10 +5,13 @@
   "scripts": {
     "dev": "next dev",
     "dev:tunnel": "concurrently -n next,ngrok -c blue,magenta \"next dev\" \"ngrok http 3000\"",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test --experimental-strip-types src/tests/**/*.test.ts",
+    "test": "node --test --experimental-strip-types src/tests/cra-settings-validators.test.ts src/tests/cron-security.test.ts src/tests/date-only.test.ts src/tests/date-validation.test.ts src/tests/sin-security.test.ts src/tests/status-mapping.test.ts src/tests/trolley-timeout.test.ts src/tests/workflow-removal.test.ts",
+    "test:integration:cra": "dotenv -e .env.local -- node --experimental-strip-types scripts/run-cra-integration-tests.ts",
+    "sin:backfill": "node --experimental-strip-types scripts/backfill-employee-sins.ts",
+    "cra:artifacts:reconcile": "node --experimental-strip-types scripts/reconcile-cra-artifacts.ts",
     "migrate:local": "dotenv -e .env.local -- prisma migrate dev",
     "studio:local": "dotenv -e .env.local -- prisma studio"
   },
@@ -40,6 +43,7 @@
     "dotenv-cli": "^11.0.0",
     "eslint": "^9",
     "eslint-config-next": "15.5.4",
+    "pdfjs-dist": "^6.1.200",
     "prisma": "^6.16.2",
     "tailwindcss": "^4",
     "typescript": "^5"

@@ -1,20 +1,21 @@
 import { NextResponse } from "next/server";
-import { sendAllDuePayrollRunsToTrolley } from "@/lib/payments/trolley-payroll";
+import { isCronRequestAuthorized } from "@/lib/cron-auth";
+import { runPayrollSendDueJob } from "@/lib/payments/payroll-cron";
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function GET(req: Request) {
-  const authHeader = req.headers.get("authorization");
-  const cronSecret = process.env.CRON_SECRET;
-
-  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+  if (!isCronRequestAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const result = await sendAllDuePayrollRunsToTrolley();
+    const result = await runPayrollSendDueJob();
     return NextResponse.json({ ok: true, ...result });
-  } catch (error: unknown) {
+  } catch {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to send due payroll runs." },
+      { error: "Failed to reconcile or send due payroll runs." },
       { status: 500 }
     );
   }

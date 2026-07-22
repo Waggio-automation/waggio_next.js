@@ -3,6 +3,13 @@ import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
 import { getCraDashboard, getMissingT4FilingSettings, getReminderState } from "@/lib/cra";
 import { generateT4Action, syncRemittancesAction } from "./actions";
 import PlanRequiredButton from "@/app/components/PlanRequiredButton";
+import {
+  formatUtcDateOnly,
+  CRA_OPERATIONAL_TIME_ZONE,
+  getDateOnlyCalendarYear,
+  getTodayUtcDateOnly,
+  parseUtcDateOnly,
+} from "@/lib/date-only";
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("en-CA", {
@@ -12,19 +19,27 @@ function formatMoney(value: number) {
 }
 
 function formatDate(value: Date) {
+  return formatUtcDateOnly(value, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatInstantDate(value: Date) {
   return new Intl.DateTimeFormat("en-CA", {
     month: "short",
     day: "numeric",
     year: "numeric",
+    timeZone: CRA_OPERATIONAL_TIME_ZONE,
   }).format(value);
 }
 
 function formatMonthYear(value: string) {
-  const date = new Date(`${value}T00:00:00`);
-  return new Intl.DateTimeFormat("en-CA", {
+  return formatUtcDateOnly(parseUtcDateOnly(`${value}-01`), {
     month: "long",
     year: "numeric",
-  }).format(date);
+  });
 }
 
 function formatDashboardDocumentLabel(document: {
@@ -97,18 +112,59 @@ function getAuditLogHref(entry: {
   return null;
 }
 
+const COMPLIANCE_REASON_CODES = [
+  "AMBIGUOUS_PAYROLL_STATUS",
+  "LEGACY_STATUS_MISSING",
+  "PAYROLL_RUN_COMPANY_MISMATCH",
+  "PAID_PARENT_CHILD_STATUS_CONFLICT",
+  "PAID_PARENT_CHILD_PAYMENT_EVIDENCE_MISSING",
+  "SIN_ENCRYPTION_STATE_UNKNOWN",
+  "SIN_DECRYPTION_FAILED",
+  "INVALID_DECRYPTED_SIN",
+] as const;
+
+function formatComplianceAuditSummary(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const value = metadata as Record<string, unknown>;
+  const included = typeof value.includedCount === "number" ? value.includedCount : null;
+  const excluded = typeof value.excludedCount === "number" ? value.excludedCount : null;
+  const reasons =
+    value.reasonCounts && typeof value.reasonCounts === "object" && !Array.isArray(value.reasonCounts)
+      ? (value.reasonCounts as Record<string, unknown>)
+      : {};
+  const reasonText = COMPLIANCE_REASON_CODES.flatMap((code) => {
+    const count = reasons[code];
+    return typeof count === "number" && count > 0 ? [`${code}: ${count}`] : [];
+  });
+
+  if (included === null && excluded === null && reasonText.length === 0) return null;
+  return [
+    included === null ? null : `included ${included}`,
+    excluded === null ? null : `excluded ${excluded}`,
+    ...reasonText,
+  ].filter(Boolean).join(" · ");
+}
+
 export default async function CraDashboardPage() {
   const company = await requireCompanyAdminOrRedirect();
   const [dashboard, missingT4Settings] = await Promise.all([
     getCraDashboard(company.id),
     getMissingT4FilingSettings(company.id),
   ]);
-  const currentYear = new Date().getFullYear();
+  const currentYear = getDateOnlyCalendarYear(getTodayUtcDateOnly());
   const hasSelectedPlan = Boolean(company.currentPlan);
   const t4Ready = missingT4Settings.length === 0;
 
   return (
     <div className="space-y-6">
+      {dashboard.providerVerification.reviewRequired ? (
+        <section className="rounded-3xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-950">
+          <p className="font-semibold">REVIEW REQUIRED — provider evidence freshness SLA is not met</p>
+          <p className="mt-1">
+            Unverified status: {dashboard.providerVerification.unverifiedStatusCount}. Never verified: {dashboard.providerVerification.neverSuccessfullyVerifiedCount}. Missing provider reference: {dashboard.providerVerification.providerReferenceMissingCount}. Stale: {dashboard.providerVerification.staleVerificationCount}. Outdated contract: {dashboard.providerVerification.evidenceVersionMismatchCount}. Legacy: {dashboard.providerVerification.legacyUnverifiedCount}. Unresolved failures: {dashboard.providerVerification.unresolvedFailureCount}. Blocked documents: {dashboard.providerVerification.blockedDocumentCount}.
+          </p>
+        </section>
+      ) : null}
       <section className="grid gap-4 md:grid-cols-3">
         <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
           <p className="text-sm text-gray-500">Outstanding CRA balance</p>
@@ -280,7 +336,7 @@ export default async function CraDashboardPage() {
                   <p className="text-xs text-gray-500">{formatDashboardDocumentMeta(document)}</p>
                 </div>
                 <div className="text-right">
-                  <span className="block text-xs text-gray-500">{formatDate(document.uploadedAt)}</span>
+                  <span className="block text-xs text-gray-500">{formatInstantDate(document.uploadedAt)}</span>
                   <div className="mt-2 flex items-center justify-end gap-2">
                     {canPreviewDocument(document) ? (
                       <a
@@ -313,14 +369,18 @@ export default async function CraDashboardPage() {
           <div className="mt-4 space-y-3">
             {dashboard.auditLogs.map((entry) => {
               const href = getAuditLogHref(entry);
+              const complianceSummary = formatComplianceAuditSummary(entry.metadataJson);
 
               if (!href) {
                 return (
                   <div key={entry.id.toString()} className="rounded-2xl bg-gray-50 px-4 py-3">
                     <p className="text-sm font-medium text-gray-900">{entry.action.replaceAll("_", " ")}</p>
                     <p className="mt-1 text-xs text-gray-500">
-                      {entry.targetType} #{entry.targetId} on {formatDate(entry.createdAt)}
+                      {entry.targetType} #{entry.targetId} on {formatInstantDate(entry.createdAt)}
                     </p>
+                    {complianceSummary ? (
+                      <p className="mt-1 text-xs text-gray-600">{complianceSummary}</p>
+                    ) : null}
                   </div>
                 );
               }
@@ -335,8 +395,11 @@ export default async function CraDashboardPage() {
                     <div>
                       <p className="text-sm font-medium text-gray-900">{entry.action.replaceAll("_", " ")}</p>
                       <p className="mt-1 text-xs text-gray-500">
-                        {entry.targetType} #{entry.targetId} on {formatDate(entry.createdAt)}
+                        {entry.targetType} #{entry.targetId} on {formatInstantDate(entry.createdAt)}
                       </p>
+                      {complianceSummary ? (
+                        <p className="mt-1 text-xs text-gray-600">{complianceSummary}</p>
+                      ) : null}
                     </div>
                     <span className="text-xs font-medium text-gray-900">Open</span>
                   </div>

@@ -8,6 +8,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { syncCompanyEmployeeSeatQuantity } from "@/lib/stripe";
 import { requireCompanyAdminOrRedirect } from "@/lib/company-auth";
+import { utcDateOnlySchema } from "@/lib/validation/date-only";
+import { z } from "zod";
 import {
   configureEmployeePayout,
   employeePayoutPayloadSchema,
@@ -205,6 +207,13 @@ export async function updateEmployeeProfileAction(formData: FormData) {
   if (payType === "SALARY" && salary == null) {
     throw new Error("Annual salary is required for salaried employees.");
   }
+  const parsedDates = z.object({
+    hireDate: utcDateOnlySchema,
+    birthDate: utcDateOnlySchema,
+  }).safeParse({ hireDate, birthDate });
+  if (!parsedDates.success) {
+    redirect(`/employees/${employeeId.toString()}?error=invalid-date`);
+  }
 
   await prisma.employee.update({
     where: { id: employeeId, companyId: company.id },
@@ -221,9 +230,9 @@ export async function updateEmployeeProfileAction(formData: FormData) {
       addrProvince: asString(formData.get("addrProvince")).trim() || "ON",
       addrPostal: asString(formData.get("addrPostal")).trim(),
       addrCountry: asString(formData.get("addrCountry")).trim() || "CA",
-      birthDate: new Date(birthDate),
+      birthDate: parsedDates.data.birthDate,
       employmentType: employmentType as "FULL_TIME" | "PART_TIME" | "CONTRACTOR",
-      hireDate: new Date(hireDate),
+      hireDate: parsedDates.data.hireDate,
       payGroup: payGroup as "BI_WEEKLY" | "MONTHLY",
       payType: payType as "HOURLY" | "SALARY",
       hourlyRate: payType === "HOURLY" ? hourlyRate : null,

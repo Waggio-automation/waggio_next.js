@@ -1,3 +1,5 @@
+import { isValidSin, normalizeSin } from "./sin.ts";
+
 type Address = {
   line1: string;
   line2?: string | null;
@@ -93,6 +95,14 @@ function xmlAmountTag(name: string, value: string) {
   return `<${name}>${value}</${name}>`;
 }
 
+function validatedArtifactSin(value: string) {
+  const normalized = normalizeSin(value);
+  if (!/^\d{9}$/.test(normalized) || !isValidSin(normalized)) {
+    throw new Error("T4 artifact contains an invalid employee tax identifier");
+  }
+  return normalized;
+}
+
 function renderAddress(tagName: string, address: Address) {
   return `<${tagName}>
 ${xmlTag("addr_l1_txt", address.line1)}
@@ -153,7 +163,7 @@ ${xmlTag("gvn_nm", slip.employee.firstName)}
 ${xmlTag("init", slip.employee.initial ?? undefined)}
 </EMPE_NM>
 ${renderAddress("EMPE_ADDR", slip.employee.address)}
-${xmlTag("sin", slip.employee.sin)}
+${xmlTag("sin", validatedArtifactSin(slip.employee.sin))}
 ${xmlTag("bn", slip.payrollAccountNumber)}
 ${xmlTag("rpp_dpsp_rgst_nbr", slip.rppDpspRegistrationNumber ?? undefined)}
 ${xmlTag("cpp_qpp_xmpt_cd", slip.cppExemptCode)}
@@ -241,6 +251,7 @@ function formatMoneyForPdf(value: string) {
 export function renderEmployeeT4SlipHtml(slip: T4SlipData, taxYear: number, employerName: string) {
   const employeeName = `${slip.employee.firstName} ${slip.employee.lastName}`.trim();
   const addressLine2 = slip.employee.address.line2 ? `<div>${escapeHtml(slip.employee.address.line2)}</div>` : "";
+  const sin = validatedArtifactSin(slip.employee.sin);
 
   return `<!doctype html>
 <html lang="en">
@@ -275,7 +286,7 @@ export function renderEmployeeT4SlipHtml(slip: T4SlipData, taxYear: number, empl
     ${addressLine2}
     <div>${escapeHtml(slip.employee.address.city)}, ${escapeHtml(slip.employee.address.provinceCode)} ${escapeHtml(slip.employee.address.postalCode)}</div>
     <div>${escapeHtml(slip.employee.address.countryCode)}</div>
-    <div style="margin-top: 10px; color: #4b5563;">SIN: ${escapeHtml(slip.employee.sin)}</div>
+    <div style="margin-top: 10px; color: #4b5563;">SIN: ${escapeHtml(sin)}</div>
   </div>
 
   <div class="grid">

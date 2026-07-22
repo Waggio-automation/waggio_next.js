@@ -29,7 +29,8 @@ export const TROLLEY_EVENT_STATUS_MAP: Record<string, MappingRule> = {
   "batch.created": { scope: "payroll", payrollStatus: "funding" },
   "batch.processing": { scope: "payroll", payrollStatus: "paying" },
   "payment.pending": { scope: "payroll", payrollStatus: "paying" },
-  "payment.paid": { scope: "payroll", payrollStatus: "paid" },
+  "payment.processed": { scope: "payroll", payrollStatus: "paid" },
+  "payment.returned": { scope: "payroll", payrollStatus: "failed", failureType: "employee" },
   "payment.failed": { scope: "payroll", payrollStatus: "failed", failureType: "employee" },
   "batch.failed": { scope: "payroll", payrollStatus: "failed", failureType: "funding" },
 };

@@ -16,7 +16,7 @@ import {
   FEDERAL_TAX,
   ONTARIO_TAX,
   PAY_PERIODS,
-} from "./cra-constants-2026";
+} from "./cra-constants-2026.ts";
 
 const HOLIDAY_MULTIPLIER = 1.5;
 const OVERTIME_MULTIPLIER = 1.5;
