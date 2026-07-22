@@ -163,6 +163,11 @@ export default function HoursTable({
   const rows = employees.map((e) => {
     const st = rowsState[e.id];
 
+    // Preview only, no YTD lookup here (client-side, no fetch) — ytdPensionableEarnings /
+    // ytdInsurableEarnings default to 0, so CPP/EI shown here may run slightly ahead of the
+    // real payroll run's numbers for an employee who has already crossed YMPE / the EI
+    // maximum earlier this year. The actual run (src/app/api/payroll/run/route.ts) looks up
+    // real YTD figures before calculating.
     const amounts = calculatePayrollAmounts({
       payType: e.payType,
       payGroup: e.payGroup,

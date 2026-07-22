@@ -1,12 +1,22 @@
 // CRA-compliant payroll calculation for Ontario, using the T4127 annualization method
 // (Option 1 — Chapter 4). See cra-constants-2026.ts for the year's constants.
 //
+// CPP/EI capping (fixed 2026-07-22, verified against live PDOC): CRA does NOT cap CPP/EI
+// per period by dividing the annual maximum by the number of pay periods. It caps based on
+// *cumulative year-to-date* pensionable/insurable earnings only — a period is uncapped until
+// the YTD total actually reaches YMPE / the EI maximum insurable earnings. Callers should pass
+// ytdPensionableEarnings / ytdInsurableEarnings (cumulative amounts from prior pay periods
+// this calendar year, BEFORE this period). If omitted, both default to 0, which matches what
+// PDOC does when its YTD fields are left blank — correct for a single isolated calculation,
+// but if you call this function repeatedly across a full year WITHOUT passing real YTD each
+// time, CPP/EI will never stop once an employee crosses YMPE / the EI max, and will be
+// over-deducted for the rest of the year. Production callers must supply YTD.
+//
 // Limitations:
 // - Ontario residents only. Other provinces require their own surtax/health-premium tables.
-// - Does not model year-to-date CPP/EI maxout. Each pay period is calculated independently;
-//   for a full year of stable employment the per-period caps are sufficient, but a mid-year
-//   maxout is not detected.
-// - Does not model CPP2 (second additional contribution above YMPE up to YAMPE).
+// - Does not model CPP2 (second additional contribution above YMPE up to YAMPE, 2026: $74,600
+//   to $85,000 at 4.00%, max $416/year — https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/payroll-deductions-contributions/canada-pension-plan-cpp/cpp-contribution-rates-maximums-exemptions.html).
+//   TODO(cpp2): implement once needed.
 // - Treats every pay as periodic (not bonus/commission). Bonus tax (TB) is not implemented.
 // - Federal BPAF phase-out for high earners is not modeled — caller passes the TD1 amount.
 
@@ -36,6 +46,12 @@ export type CalculatePayrollInput = {
   includeVacation: boolean;
   federalTD1: number;
   provincialTD1: number;
+  /** Cumulative pensionable earnings (post-exemption) already contributed on this calendar
+   *  year, BEFORE this pay period. Defaults to 0 — see the CPP/EI capping note above. */
+  ytdPensionableEarnings?: number | null;
+  /** Cumulative insurable earnings already contributed on this calendar year, BEFORE this
+   *  pay period. Defaults to 0 — see the CPP/EI capping note above. */
+  ytdInsurableEarnings?: number | null;
 };
 
 export type CalculatePayrollResult = {
@@ -90,18 +106,21 @@ export function calculatePayrollAmounts(
   const vacationAmount = input.includeVacation ? basePay * vacationPct : 0;
   const grossPay = basePay + vacationAmount;
 
-  // 2. CPP — proration of the $3,500 annual exemption per pay period, capped at YMPE.
+  // 2. CPP — $3,500 annual exemption prorated per pay period; capped on *remaining room*
+  //    to YMPE based on YTD pensionable earnings (not a per-period average — see header).
   const periodExemption = CPP.basicExemption / P;
-  const periodMaxPensionable = (CPP.YMPE - CPP.basicExemption) / P;
-  const pensionableEarnings = Math.min(
-    Math.max(grossPay - periodExemption, 0),
-    periodMaxPensionable
-  );
+  const rawPeriodPensionable = Math.max(grossPay - periodExemption, 0);
+  const maxAnnualPensionable = CPP.YMPE - CPP.basicExemption;
+  const ytdPensionable = Math.max(Number(input.ytdPensionableEarnings ?? 0), 0);
+  const remainingPensionableRoom = Math.max(maxAnnualPensionable - ytdPensionable, 0);
+  const pensionableEarnings = Math.min(rawPeriodPensionable, remainingPensionableRoom);
   const cppContribution = pensionableEarnings * CPP.rate;
 
-  // 3. EI — capped at the annual maximum insurable earnings.
-  const periodMaxInsurable = EI.maxInsurableEarnings / P;
-  const insurableEarnings = Math.min(grossPay, periodMaxInsurable);
+  // 3. EI — capped on *remaining room* to the annual maximum insurable earnings based on
+  //    YTD insurable earnings (not a per-period average — see header).
+  const ytdInsurable = Math.max(Number(input.ytdInsurableEarnings ?? 0), 0);
+  const remainingInsurableRoom = Math.max(EI.maxInsurableEarnings - ytdInsurable, 0);
+  const insurableEarnings = Math.min(Math.max(grossPay, 0), remainingInsurableRoom);
   const eiPremium = insurableEarnings * EI.rate;
 
   // 4. F5A — first-additional CPP enhancement (1% portion). Subtracted from income before
@@ -163,12 +182,15 @@ export function calculatePayrollAmounts(
 
   const T2 = Math.max(T4 + V1 + V2 - S, 0);
 
-  // 9. Per-period income tax = (T1 + T2) / P. LCF/LCP assumed 0.
-  const incomeTax = (T1 + T2) / P;
+  // 9. Per-period income tax = federal + provincial, each rounded to the cent separately
+  //    (matching PDOC's "Federal tax deduction" + "Provincial tax deduction" line items)
+  //    before summing, rather than rounding the combined total once. LCF/LCP assumed 0.
+  const federalTaxPerPeriod = r2(T1 / P);
+  const provincialTaxPerPeriod = r2(T2 / P);
 
   const ded_cpp = r2(cppContribution);
   const ded_ei = r2(eiPremium);
-  const ded_tax = r2(incomeTax);
+  const ded_tax = r2(federalTaxPerPeriod + provincialTaxPerPeriod);
   const totalDeductions = r2(ded_cpp + ded_ei + ded_tax);
   const ded_eht = 0;
   const ded_wsib = 0;
