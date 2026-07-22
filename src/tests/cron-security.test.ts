@@ -31,7 +31,7 @@ test("deployment scheduler registers separate due-dispatch and historical revali
   )) as { crons?: Array<{ path: string; schedule: string }> };
   assert.deepEqual(manifest.crons, [
     { path: "/api/cron/payroll-send-due", schedule: "0 13 * * *" },
-    { path: "/api/cron/payroll-revalidate-paid", schedule: "*/15 * * * *" },
+    { path: "/api/cron/payroll-revalidate-paid", schedule: "0 14 * * *" },
   ]);
   assert.notEqual(manifest.crons?.[0]?.path, manifest.crons?.[1]?.path);
 });
