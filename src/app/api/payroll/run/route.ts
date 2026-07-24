@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { calculatePayrollAmounts } from "@/lib/payroll/calculatePayroll";
+import { CPP, EI } from "@/lib/payroll/cra-constants-2026";
 import { requirePayrollApiAuth } from "@/lib/payroll-api-auth";
 import { sendPayrollRunToTrolley } from "@/lib/payments/trolley-payroll";
 import { serializeUtcDateOnly } from "@/lib/date-only";
@@ -50,6 +51,33 @@ export async function POST(req: Request) {
     }
     const employeesById = new Map(employees.map((employee) => [employee.id.toString(), employee]));
 
+    // CPP/EI are capped on cumulative year-to-date pensionable/insurable earnings, not a
+    // per-period average (see calculatePayroll.ts header). Pull each employee's prior
+    // deductions for this calendar year (excluding this pay date) so the cap applies
+    // correctly once someone crosses YMPE / the EI maximum mid-year. Pensionable/insurable
+    // earnings are back-derived from the dollar amounts already deducted (ded_cpp / CPP.rate,
+    // ded_ei / EI.rate) since PayHistory doesn't store raw earnings — this assumes CPP/EI
+    // rates are constant across the calendar year, which CRA does not change mid-year.
+    const yearStart = new Date(Date.UTC(payDate.getUTCFullYear(), 0, 1));
+    const ytdSums = await prisma.payHistory.groupBy({
+      by: ["employeeId"],
+      where: {
+        employeeId: { in: employeeIds },
+        payDate: { gte: yearStart, lt: payDate },
+        status: { not: "FAILED" },
+      },
+      _sum: { ded_cpp: true, ded_ei: true },
+    });
+    const ytdByEmployee = new Map(
+      ytdSums.map((row) => [
+        row.employeeId.toString(),
+        {
+          ytdPensionableEarnings: Number(row._sum.ded_cpp ?? 0) / CPP.rate,
+          ytdInsurableEarnings: Number(row._sum.ded_ei ?? 0) / EI.rate,
+        },
+      ])
+    );
+
     const payrollRun = await prisma.$transaction(async (tx) => {
       const employeeCount = await tx.employee.count({
         where: {
@@ -84,6 +112,8 @@ export async function POST(req: Request) {
           throw new Error("PAYROLL_INPUT_CHANGED_BEFORE_COMMIT");
         }
 
+        const ytd = ytdByEmployee.get(it.employeeId);
+
         const amounts = calculatePayrollAmounts({
           payType: emp.payType,
           payGroup: emp.payGroup,
@@ -96,6 +126,8 @@ export async function POST(req: Request) {
           includeVacation: it.includeVacation,
           federalTD1: Number(emp.federalTD1 ?? 0),
           provincialTD1: Number(emp.provincialTD1 ?? 0),
+          ytdPensionableEarnings: ytd?.ytdPensionableEarnings ?? 0,
+          ytdInsurableEarnings: ytd?.ytdInsurableEarnings ?? 0,
         });
 
         await tx.payHistory.create({

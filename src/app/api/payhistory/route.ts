@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calculatePayrollAmounts } from "@/lib/payroll/calculatePayroll";
+import { CPP, EI } from "@/lib/payroll/cra-constants-2026";
 import { z } from "zod";
 import { requirePayrollApiAuth } from "@/lib/payroll-api-auth";
 import { utcDateOnlySchema } from "@/lib/validation/date-only";
@@ -137,12 +138,36 @@ export async function POST(req: NextRequest) {
   }
   const employeesById = new Map(employees.map((employee) => [employee.id.toString(), employee]));
 
+  // See the identical block in src/app/api/payroll/run/route.ts for why this is needed:
+  // CPP/EI cap on cumulative YTD earnings, not a per-period average.
+  const yearStart = new Date(Date.UTC(payDate.getUTCFullYear(), 0, 1));
+  const ytdSums = await prisma.payHistory.groupBy({
+    by: ["employeeId"],
+    where: {
+      employeeId: { in: employeeIds },
+      payDate: { gte: yearStart, lt: payDate },
+      status: { not: "FAILED" },
+    },
+    _sum: { ded_cpp: true, ded_ei: true },
+  });
+  const ytdByEmployee = new Map(
+    ytdSums.map((row) => [
+      row.employeeId.toString(),
+      {
+        ytdPensionableEarnings: Number(row._sum.ded_cpp ?? 0) / CPP.rate,
+        ytdInsurableEarnings: Number(row._sum.ded_ei ?? 0) / EI.rate,
+      },
+    ])
+  );
+
   let createdCount = 0;
 
   await prisma.$transaction(async (tx) => {
     for (const it of items) {
       const emp = employeesById.get(it.employeeId);
       if (!emp) throw new Error("PAYROLL_INPUT_CHANGED_BEFORE_COMMIT");
+
+      const ytd = ytdByEmployee.get(it.employeeId);
 
       const amounts = calculatePayrollAmounts({
         payType: emp.payType,
@@ -156,6 +181,8 @@ export async function POST(req: NextRequest) {
         includeVacation: it.includeVacation,
         federalTD1: Number(emp.federalTD1 ?? 0),
         provincialTD1: Number(emp.provincialTD1 ?? 0),
+        ytdPensionableEarnings: ytd?.ytdPensionableEarnings ?? 0,
+        ytdInsurableEarnings: ytd?.ytdInsurableEarnings ?? 0,
       });
 
       await tx.payHistory.create({
