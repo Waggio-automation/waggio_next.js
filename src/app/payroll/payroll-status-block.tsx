@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { PAYROLL_STATUS_LABELS } from "@/lib/payments/payroll-status";
 import { compareUtcDateOnly, getTodayUtcDateOnly } from "@/lib/date-only";
@@ -68,12 +69,40 @@ type MissingPayoutEmployee = {
 };
 
 export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
+  const router = useRouter();
   const [retrying, setRetrying] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [showCompletedRuns, setShowCompletedRuns] = useState(false);
   const [missingPayoutEmployees, setMissingPayoutEmployees] = useState<
     MissingPayoutEmployee[] | null
   >(null);
+  const [sending, setSending] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  async function sendPaystub(payHistoryId: string, employeeName: string) {
+    try {
+      setMessage(null);
+      setPreviewUrl(null);
+      setSending(payHistoryId);
+
+      const res = await fetch(`/api/payslip/${payHistoryId}/send`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data?.email?.error || data?.error || "Failed to send paystub");
+      }
+
+      setMessage(`Paystub sent to ${employeeName}.`);
+      if (data?.email?.previewUrl) {
+        setPreviewUrl(data.email.previewUrl);
+      }
+      router.refresh();
+    } catch (e: unknown) {
+      setMessage(e instanceof Error ? e.message : "Failed to send paystub");
+    } finally {
+      setSending(null);
+    }
+  }
 
   const now = Date.now();
   const activeRuns = runs.filter((run) => !isHideableCompletedStatus(run.status));
@@ -201,6 +230,19 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
                         {employee.failureReason ? (
                           <p className="mt-2 text-red-700">Error: {employee.failureReason}</p>
                         ) : null}
+                        <div className="mt-2">
+                          <button
+                            type="button"
+                            onClick={() => sendPaystub(employee.payHistoryId, employee.name)}
+                            disabled={sending === employee.payHistoryId || !employee.email}
+                            title={!employee.email ? "This employee has no email address on file" : undefined}
+                            className="rounded-full border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                          >
+                            {sending === employee.payHistoryId
+                              ? "Sending..."
+                              : "Generate & send paystub"}
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -223,6 +265,19 @@ export default function PayrollStatusBlock({ runs }: { runs: RunRow[] }) {
         ) : null}
 
         {message ? <p className="text-sm text-gray-600">{message}</p> : null}
+        {previewUrl ? (
+          <p className="text-xs text-gray-500">
+            Dev preview:{" "}
+            <a
+              href={previewUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="underline hover:text-gray-700"
+            >
+              view sent email
+            </a>
+          </p>
+        ) : null}
       </div>
 
       {missingPayoutEmployees ? (
