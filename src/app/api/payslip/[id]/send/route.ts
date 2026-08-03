@@ -83,6 +83,7 @@ export async function POST(
       await prisma.payHistory.update({
         where: { id: payHistoryId },
         data: {
+          status: "EMAIL_SENT",
           emailSentAt: new Date(),
           deliveryStatus: "SENT",
           emailProvider: emailResult.previewUrl ? "ethereal-dev" : "smtp",
